@@ -353,7 +353,7 @@ with tabs[0]:
                 efficiencies_test = []
                 
                 for eg in bandgaps_test:
-                    _, _, _, pce = db_calc.calculate_detailed_balance(eg, wavelengths, spectrum)
+                    pce = db_calc.calculate_single_junction(eg)
                     efficiencies_test.append(pce)
                 
                 max_idx = np.argmax(efficiencies_test)
@@ -462,7 +462,7 @@ with tabs[0]:
             
             # Calculate single junction performance
             eg = material['bandgap']
-            _, jsc, voc, pce = db_calc.calculate_detailed_balance(eg, wavelengths, spectrum)
+            r = db_calc.calculate_single_junction(eg, detailed_output=True); jsc = r.jsc_theoretical; voc = r.voc_theoretical; pce = r.efficiency_theoretical
             
             materials_for_comparison.append({
                 'Material': mat_name,
@@ -947,7 +947,7 @@ with tabs[2]:
                         db_calc = DetailedBalanceCalculator(temperature + 273.15, concentration)
                         
                         for eg in optimal_bandgaps:
-                            _, jsc, _, _ = db_calc.calculate_detailed_balance(eg, wavelengths, spectrum)
+                            r = db_calc.calculate_single_junction(eg, detailed_output=True); jsc = r.jsc_theoretical
                             subcell_currents.append(jsc)
                         
                         # Current matching visualization
