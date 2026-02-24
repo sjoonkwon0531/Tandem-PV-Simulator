@@ -366,13 +366,9 @@ with tabs[0]:
                 optimizer = BandgapOptimizer(db_calc)
                 
                 try:
-                    result = optimizer.optimize_bandgaps(
-                        n_junctions=n_junctions,
-                        temperature=temperature + 273.15,
-                        concentration=concentration
-                    )
-                    sq_efficiencies.append(result['efficiency'] * 100)
-                    optimal_bandgaps_list.append(result['bandgaps'])
+                    result = optimizer.optimize_n_junction(n_junctions)
+                    sq_efficiencies.append(result.max_efficiency * 100)
+                    optimal_bandgaps_list.append(result.bandgaps)
                 except:
                     # Fallback approximation
                     # Theoretical maximum from literature
@@ -588,7 +584,7 @@ with tabs[1]:
                 }
                 
                 try:
-                    predicted_eg, uncertainty = st.session_state.ml_predictor.predict_bandgap(composition_dict)
+                    predicted_eg, uncertainty = st.session_state.ml_predictor.predict(composition_dict)
                     
                     # Display prediction
                     col_pred1, col_pred2 = st.columns(2)
@@ -724,7 +720,7 @@ with tabs[1]:
         
         with st.expander("📚 페로브스카이트 밴드갭 데이터베이스"):
             # Get dataset from ML predictor
-            dataset = st.session_state.ml_predictor.get_dataset()
+            dataset = st.session_state.ml_predictor._load_literature_dataset()
             
             if dataset is not None and len(dataset) > 0:
                 # Display subset of literature data
@@ -828,15 +824,11 @@ with tabs[2]:
                     optimizer = BandgapOptimizer(db_calc)
                     
                     # Run optimization
-                    result = optimizer.optimize_bandgaps(
-                        n_junctions=n_junctions,
-                        temperature=temperature + 273.15,
-                        concentration=concentration
-                    )
+                    result = optimizer.optimize_n_junction(n_junctions)
                     
                     if result:
-                        optimal_bandgaps = result['bandgaps']
-                        optimal_efficiency = result['efficiency'] * 100
+                        optimal_bandgaps = result.bandgaps
+                        optimal_efficiency = result.max_efficiency * 100
                         
                         # Store results in session state
                         st.session_state.simulation_data['optimal_bandgaps'] = optimal_bandgaps
