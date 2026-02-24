@@ -657,7 +657,7 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
             st.session_state.stage1_complete = True
             
             st.success("✅ Stage 1 complete! New tabs are now available.")
-            st.experimental_rerun()
+            st.rerun()
     
     # =============================================================================
     # STAGE 1 RESULT TABS
