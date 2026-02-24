@@ -57,7 +57,7 @@ class MaterialDatabase:
         """Initialize Track A materials (multi-material systems)"""
         
         materials = {
-            # Silicon variants
+            # Silicon family
             'c-Si': {
                 'name': 'Crystalline Silicon',
                 'bandgap': 1.12,  # eV at 300K
@@ -85,6 +85,32 @@ class MaterialDatabase:
                 'absorption_coefficient': 1e5,
                 'diffusion_length': 10e-7,     # Very short in a-Si
                 'dangling_bonds': 1e16,        # cm⁻³
+            },
+            
+            'µc-Si': {
+                'name': 'Microcrystalline Silicon',
+                'bandgap': 1.1,
+                'type': 'indirect',
+                'cte': 2.8e-6,
+                'humidity_score': 8.0,
+                'cost_per_cm2': 0.03,
+                'deposition': 'pecvd',
+                'n_k_data': self._generate_si_nk(),
+                'absorption_coefficient': 2e4,
+                'crystalline_fraction': 0.6,   # Mixed phase
+            },
+            
+            'SiGe': {
+                'name': 'Silicon Germanium',
+                'bandgap': 0.9,  # Variable 0.7-1.1 eV with Ge content
+                'bandgap_range': (0.7, 1.1),
+                'type': 'indirect',
+                'cte': 4.2e-6,
+                'humidity_score': 8.5,
+                'cost_per_cm2': 0.12,
+                'deposition': 'epitaxy',
+                'n_k_data': self._generate_sige_nk(),
+                'ge_fraction': 0.3,  # Default Ge content
             },
             
             # III-V semiconductors
@@ -116,6 +142,56 @@ class MaterialDatabase:
                 'indium_fraction': 0.49,  # Ga₀.₅₁In₀.₄₉P lattice matched to GaAs
             },
             
+            'InGaAs': {
+                'name': 'Indium Gallium Arsenide',
+                'bandgap': 1.0,  # Variable 0.7-1.4 eV with In content
+                'bandgap_range': (0.7, 1.4),
+                'type': 'direct',
+                'cte': 5.9e-6,
+                'humidity_score': 7.8,
+                'cost_per_cm2': 4.00,
+                'deposition': 'mocvd',
+                'n_k_data': self._generate_ingaas_nk(),
+                'indium_fraction': 0.2,  # Default composition
+            },
+            
+            'InP': {
+                'name': 'Indium Phosphide',
+                'bandgap': 1.34,
+                'type': 'direct',
+                'cte': 4.6e-6,
+                'humidity_score': 8.2,
+                'cost_per_cm2': 5.00,
+                'deposition': 'mocvd',
+                'n_k_data': self._generate_inp_nk(),
+                'lattice_constant': 5.87,  # Å
+            },
+            
+            'AlGaAs': {
+                'name': 'Aluminum Gallium Arsenide',
+                'bandgap': 2.0,  # Variable 1.42-2.16 eV
+                'bandgap_range': (1.42, 2.16),
+                'type': 'direct',  # Becomes indirect at high Al
+                'cte': 5.2e-6,
+                'humidity_score': 7.5,
+                'cost_per_cm2': 3.50,
+                'deposition': 'mocvd',
+                'n_k_data': self._generate_algaas_nk(),
+                'aluminum_fraction': 0.3,
+            },
+            
+            'GaSb': {
+                'name': 'Gallium Antimonide',
+                'bandgap': 0.73,
+                'type': 'direct',
+                'cte': 6.1e-6,
+                'humidity_score': 7.0,
+                'cost_per_cm2': 6.00,
+                'deposition': 'mocvd',
+                'n_k_data': self._generate_gasb_nk(),
+                'near_infrared': True,
+            },
+            
             # Chalcogenide thin films
             'CIGS': {
                 'name': 'Copper Indium Gallium Selenide',
@@ -144,8 +220,32 @@ class MaterialDatabase:
                 'toxicity_concern': True,
             },
             
+            'CZTS': {
+                'name': 'Copper Zinc Tin Sulfide',
+                'bandgap': 1.5,
+                'type': 'direct',
+                'cte': 9.2e-6,
+                'humidity_score': 6.0,
+                'cost_per_cm2': 0.20,
+                'deposition': 'sputtering',
+                'n_k_data': self._generate_czts_nk(),
+                'earth_abundant': True,
+            },
+            
+            'Sb2Se3': {
+                'name': 'Antimony Selenide',
+                'bandgap': 1.1,
+                'type': 'direct',
+                'cte': 12e-6,
+                'humidity_score': 5.5,
+                'cost_per_cm2': 0.15,
+                'deposition': 'thermal_evaporation',
+                'n_k_data': self._generate_sb2se3_nk(),
+                'emerging_technology': True,
+            },
+            
             # Organic photovoltaics
-            'OPV_P3HT': {
+            'P3HT:PCBM': {
                 'name': 'P3HT:PCBM Blend',
                 'bandgap': 1.9,
                 'bandgap_range': (1.2, 2.0),
@@ -159,11 +259,61 @@ class MaterialDatabase:
                 'pcbm_ratio': 0.8,  # PCBM weight ratio
             },
             
+            'PTB7': {
+                'name': 'PTB7:PC71BM Blend',
+                'bandgap': 1.6,
+                'type': 'direct',
+                'cte': 140e-6,
+                'humidity_score': 2.5,
+                'cost_per_cm2': 0.15,
+                'deposition': 'solution_processing',
+                'n_k_data': self._generate_ptb7_nk(),
+                'low_bandgap_polymer': True,
+            },
+            
+            'PM6:Y6': {
+                'name': 'PM6:Y6 Non-fullerene Blend',
+                'bandgap': 1.33,
+                'type': 'direct',
+                'cte': 160e-6,
+                'humidity_score': 3.0,
+                'cost_per_cm2': 0.12,
+                'deposition': 'solution_processing',
+                'n_k_data': self._generate_pm6y6_nk(),
+                'non_fullerene_acceptor': True,
+            },
+            
+            # Dye-sensitized materials
+            'N719': {
+                'name': 'N719 Ruthenium Dye',
+                'bandgap': 1.7,  # Effective for DSSC
+                'type': 'molecular',
+                'cte': 100e-6,
+                'humidity_score': 4.0,
+                'cost_per_cm2': 0.08,
+                'deposition': 'solution_processing',
+                'n_k_data': self._generate_n719_nk(),
+                'dssc_technology': True,
+            },
+            
+            'organic_dyes': {
+                'name': 'Organic DSSC Dyes',
+                'bandgap': 2.0,  # Variable 1.5-2.5 eV
+                'bandgap_range': (1.5, 2.5),
+                'type': 'molecular',
+                'cte': 120e-6,
+                'humidity_score': 3.5,
+                'cost_per_cm2': 0.06,
+                'deposition': 'solution_processing',
+                'n_k_data': self._generate_orgdye_nk(),
+                'tunable_absorption': True,
+            },
+            
             # Quantum dots
             'PbS_QD': {
                 'name': 'Lead Sulfide Quantum Dots',
-                'bandgap': 1.3,  # Size-tunable: 0.4-1.5 eV
-                'bandgap_range': (0.4, 1.5),
+                'bandgap': 1.3,  # Size-tunable: 0.5-1.5 eV
+                'bandgap_range': (0.5, 1.5),
                 'type': 'direct',
                 'cte': 18e-6,
                 'humidity_score': 4.0,
@@ -174,18 +324,55 @@ class MaterialDatabase:
                 'dot_size': 3.5,  # nm (affects bandgap)
             },
             
-            'PbSe_QD': {
-                'name': 'Lead Selenide Quantum Dots',
-                'bandgap': 0.9,  # NIR optimized
-                'bandgap_range': (0.4, 1.3),
+            'CsPbI3_QD': {
+                'name': 'Cesium Lead Iodide Quantum Dots',
+                'bandgap': 1.73,
                 'type': 'direct',
-                'cte': 20e-6,
-                'humidity_score': 4.5,
-                'cost_per_cm2': 1.20,
+                'cte': 15e-6,
+                'humidity_score': 6.0,  # Better than organic perovskites
+                'cost_per_cm2': 0.90,
                 'deposition': 'solution_processing',
-                'n_k_data': self._generate_pbseqd_nk(),
+                'n_k_data': self._generate_cspbiqd_nk(),
                 'quantum_confinement': True,
-                'dot_size': 4.2,  # nm
+                'phase_stable_qd': True,
+            },
+            
+            # Other emerging materials
+            'Cu2O': {
+                'name': 'Copper Oxide',
+                'bandgap': 2.1,
+                'type': 'direct',
+                'cte': 16.9e-6,
+                'humidity_score': 7.0,
+                'cost_per_cm2': 0.08,
+                'deposition': 'electrodeposition',
+                'n_k_data': self._generate_cu2o_nk(),
+                'earth_abundant': True,
+                'p_type_oxide': True,
+            },
+            
+            'SnS': {
+                'name': 'Tin Sulfide',
+                'bandgap': 1.3,
+                'type': 'indirect',
+                'cte': 14e-6,
+                'humidity_score': 6.5,
+                'cost_per_cm2': 0.12,
+                'deposition': 'thermal_evaporation',
+                'n_k_data': self._generate_sns_nk(),
+                'earth_abundant': True,
+            },
+            
+            'BaSi2': {
+                'name': 'Barium Disilicide',
+                'bandgap': 1.3,
+                'type': 'indirect',
+                'cte': 18e-6,
+                'humidity_score': 8.0,
+                'cost_per_cm2': 0.25,
+                'deposition': 'sputter_epitaxy',
+                'n_k_data': self._generate_basi2_nk(),
+                'silicide_semiconductor': True,
             }
         }
         
@@ -444,6 +631,215 @@ class MaterialDatabase:
         
         return n, k
     
+    # Additional n/k generators for new Track A materials
+    def _generate_sige_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for SiGe alloy"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        bandgap = 0.9  # Variable with Ge content
+        
+        # Between Si and Ge properties
+        n = 4.2 + 0.15 / (wavelengths / 1000) ** 2
+        alpha = np.where(
+            wavelengths < 1380,  # Band edge
+            2e4 * np.exp(-(1240 / wavelengths - bandgap) / 0.12),
+            20
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_ingaas_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for InGaAs"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        bandgap = 1.0
+        
+        n = 3.6 + 0.2 / np.maximum((photon_energy - 0.8) ** 2, 1e-6)
+        alpha = np.where(
+            photon_energy > bandgap,
+            1.2e5 * np.maximum(photon_energy - bandgap, 0) ** 0.5,
+            50 * np.exp((photon_energy - bandgap) / 0.035)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_inp_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for InP"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 3.2 + 0.18 / np.maximum((photon_energy - 1.0) ** 2, 1e-6)
+        alpha = np.where(
+            photon_energy > 1.34,
+            8e4 * np.maximum(photon_energy - 1.34, 0) ** 0.5,
+            15 * np.exp((photon_energy - 1.34) / 0.030)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_algaas_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for AlGaAs"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        bandgap = 2.0  # Variable with Al content
+        
+        n = 3.0 + 0.15 / np.maximum((photon_energy - 1.5) ** 2, 1e-6)
+        alpha = np.where(
+            photon_energy > bandgap,
+            6e4 * np.maximum(photon_energy - bandgap, 0) ** 0.5,
+            8 * np.exp((photon_energy - bandgap) / 0.025)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_gasb_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for GaSb"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 4.0 + 0.3 / np.maximum((photon_energy - 0.5) ** 2, 1e-6)
+        alpha = np.where(
+            photon_energy > 0.73,
+            1.5e5 * np.maximum(photon_energy - 0.73, 0) ** 0.5,
+            200 * np.exp((photon_energy - 0.73) / 0.050)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_czts_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for CZTS"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 2.9 + 0.25 / np.maximum((photon_energy - 1.0) ** 2, 1e-6)
+        alpha = np.where(
+            photon_energy > 1.5,
+            1.2e5 * np.maximum(photon_energy - 1.5, 0) ** 0.5,
+            30 * np.exp((photon_energy - 1.5) / 0.035)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_sb2se3_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for Sb2Se3"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 3.5 + 0.2 / np.maximum((photon_energy - 0.8) ** 2, 1e-6)
+        alpha = np.where(
+            photon_energy > 1.1,
+            1e5 * np.maximum(photon_energy - 1.1, 0) ** 0.5,
+            100 * np.exp((photon_energy - 1.1) / 0.040)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_ptb7_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for PTB7"""
+        wavelengths = self.wavelength_range
+        
+        n = 1.8 + 0.03 * np.sin(2 * np.pi * wavelengths / 250)
+        # PTB7 absorption peak ~700nm
+        alpha_ptb7 = 6e4 * np.exp(-((wavelengths - 700) / 100) ** 2)
+        alpha_pc71bm = 4e4 * np.exp(-((wavelengths - 380) / 80) ** 2)
+        alpha = alpha_ptb7 + alpha_pc71bm + 2000
+        
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_pm6y6_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for PM6:Y6"""
+        wavelengths = self.wavelength_range
+        
+        n = 1.9 + 0.02 * np.sin(2 * np.pi * wavelengths / 300)
+        # Broad absorption 400-900nm
+        alpha_pm6 = 5e4 * np.exp(-((wavelengths - 600) / 120) ** 2)
+        alpha_y6 = 7e4 * np.exp(-((wavelengths - 800) / 150) ** 2)  # NIR acceptor
+        alpha = alpha_pm6 + alpha_y6 + 3000
+        
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_n719_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for N719 dye"""
+        wavelengths = self.wavelength_range
+        
+        n = 1.6 + 0.01 * np.sin(2 * np.pi * wavelengths / 200)
+        # Metal-to-ligand charge transfer bands
+        alpha_mlct1 = 8e4 * np.exp(-((wavelengths - 530) / 60) ** 2)
+        alpha_mlct2 = 6e4 * np.exp(-((wavelengths - 400) / 50) ** 2)
+        alpha = alpha_mlct1 + alpha_mlct2 + 1000
+        
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_orgdye_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for organic dyes"""
+        wavelengths = self.wavelength_range
+        
+        n = 1.7 + 0.02 * np.sin(2 * np.pi * wavelengths / 180)
+        # Tunable absorption peak
+        alpha = 5e4 * np.exp(-((wavelengths - 550) / 80) ** 2) + 1500
+        
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_cspbiqd_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for CsPbI3 quantum dots"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 2.5 + 0.06 / np.maximum((photon_energy - 1.2) ** 2, 1e-6)
+        alpha = np.where(
+            photon_energy > 1.73,
+            1.1e5 * np.maximum(photon_energy - 1.73, 0) ** 0.5,
+            20 * np.exp((photon_energy - 1.73) / 0.020)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_cu2o_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for Cu2O"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 2.7 + 0.1 / np.maximum((photon_energy - 1.5) ** 2, 1e-6)
+        alpha = np.where(
+            photon_energy > 2.1,
+            4e4 * np.maximum(photon_energy - 2.1, 0) ** 0.5,
+            50 * np.exp((photon_energy - 2.1) / 0.040)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_sns_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for SnS"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 3.2 + 0.15 / np.maximum((photon_energy - 0.9) ** 2, 1e-6)
+        alpha = np.where(
+            photon_energy > 1.3,
+            8e4 * np.maximum(photon_energy - 1.3, 0) ** 0.5,
+            80 * np.exp((photon_energy - 1.3) / 0.035)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_basi2_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for BaSi2"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 3.8 + 0.12 / np.maximum((photon_energy - 0.8) ** 2, 1e-6)
+        alpha = np.where(
+            photon_energy > 1.3,
+            6e4 * np.maximum(photon_energy - 1.3, 0) ** 0.5,
+            40 * np.exp((photon_energy - 1.3) / 0.030)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
     # Perovskite n/k generators
     def _generate_mapbi3_nk(self) -> Tuple[np.ndarray, np.ndarray]:
         """Generate n/k for MAPbI₃ (Ball et al. 2015)"""
@@ -547,6 +943,188 @@ class MaterialDatabase:
         )
         k = alpha * wavelengths * 1e-9 / (4 * np.pi)
         
+        return n, k
+    
+    # Missing n/k generators for Track A materials
+    def _generate_sige_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for SiGe alloy"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        # SiGe with ~30% Ge (variable bandgap)
+        n = 3.8 + 0.08 / (wavelengths / 1000) ** 2
+        alpha = np.where(
+            wavelengths < 1300,  # Band edge ~0.9 eV
+            2e4 * np.exp(-(1240 / wavelengths - 0.9) / 0.12),
+            50
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_ingaas_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for InGaAs"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 3.5 + 0.2 / np.maximum((photon_energy - 0.8) ** 2, 1e-6)
+        n = np.where(photon_energy < 1.0, n, 3.8)
+        
+        alpha = np.where(
+            photon_energy > 1.0,
+            9e4 * np.maximum(photon_energy - 1.0, 0) ** 0.5,
+            20 * np.exp((photon_energy - 1.0) / 0.025)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_inp_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for InP"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 3.2 + 0.18 / np.maximum((photon_energy - 1.0) ** 2, 1e-6)
+        n = np.where(photon_energy < 1.34, n, 3.6)
+        
+        alpha = np.where(
+            photon_energy > 1.34,
+            9e4 * np.maximum(photon_energy - 1.34, 0) ** 0.5,
+            15 * np.exp((photon_energy - 1.34) / 0.022)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_algaas_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for AlGaAs"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        # Al₀.₃Ga₀.₇As composition
+        n = 3.4 + 0.15 / np.maximum((photon_energy - 1.2) ** 2, 1e-6)
+        n = np.where(photon_energy < 2.0, n, 3.7)
+        
+        alpha = np.where(
+            photon_energy > 2.0,
+            7e4 * np.maximum(photon_energy - 2.0, 0) ** 0.5,
+            10 * np.exp((photon_energy - 2.0) / 0.018)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_gasb_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for GaSb"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 3.8 + 0.25 / np.maximum((photon_energy - 0.5) ** 2, 1e-6)
+        n = np.where(photon_energy < 0.73, n, 4.2)
+        
+        alpha = np.where(
+            photon_energy > 0.73,
+            1.2e5 * np.maximum(photon_energy - 0.73, 0) ** 0.5,
+            30 * np.exp((photon_energy - 0.73) / 0.030)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_czts_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for CZTS"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 2.9 + 0.3 / np.maximum((photon_energy - 1.0) ** 2, 1e-6)
+        n = np.where(photon_energy < 1.5, n, 3.3)
+        
+        alpha = np.where(
+            photon_energy > 1.5,
+            9e4 * np.maximum(photon_energy - 1.5, 0) ** 0.5,
+            25 * np.exp((photon_energy - 1.5) / 0.028)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_sb2se3_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for Sb₂Se₃"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        n = 3.5 + 0.2 / np.maximum((photon_energy - 0.8) ** 2, 1e-6)
+        n = np.where(photon_energy < 1.1, n, 3.8)
+        
+        alpha = np.where(
+            photon_energy > 1.1,
+            8e4 * np.maximum(photon_energy - 1.1, 0) ** 0.5,
+            40 * np.exp((photon_energy - 1.1) / 0.032)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_ptb7_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for PTB7:PC71BM"""
+        wavelengths = self.wavelength_range
+        
+        # Low bandgap polymer with broader absorption
+        n = 1.8 + 0.03 * np.sin(2 * np.pi * wavelengths / 150)
+        
+        # PTB7 absorption peak ~700nm, PC71BM ~380nm
+        alpha_ptb7 = 6e4 * np.exp(-((wavelengths - 700) / 120) ** 2)
+        alpha_pcbm = 4e4 * np.exp(-((wavelengths - 380) / 80) ** 2)
+        alpha = alpha_ptb7 + alpha_pcbm + 2000  # Background
+        
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_pm6y6_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for PM6:Y6"""
+        wavelengths = self.wavelength_range
+        
+        n = 1.75 + 0.04 * np.sin(2 * np.pi * wavelengths / 180)
+        
+        # PM6 ~620nm, Y6 near-IR ~850nm
+        alpha_pm6 = 7e4 * np.exp(-((wavelengths - 620) / 100) ** 2)
+        alpha_y6 = 5e4 * np.exp(-((wavelengths - 850) / 150) ** 2)
+        alpha = alpha_pm6 + alpha_y6 + 1500  # Background
+        
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_n719_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for N719 dye"""
+        wavelengths = self.wavelength_range
+        
+        n = 1.6 + 0.02 * np.cos(2 * np.pi * wavelengths / 200)
+        
+        # N719 broad absorption 400-800nm with peak ~530nm
+        alpha = 8e4 * np.exp(-((wavelengths - 530) / 180) ** 2) + 1000
+        
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_orgdye_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for organic DSSC dyes"""
+        wavelengths = self.wavelength_range
+        
+        n = 1.65 + 0.03 * np.sin(2 * np.pi * wavelengths / 160)
+        
+        # Tunable absorption, example peak ~480nm
+        alpha = 6e4 * np.exp(-((wavelengths - 480) / 140) ** 2) + 800
+        
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
+        return n, k
+    
+    def _generate_cspbiqd_nk(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate n/k data for CsPbI₃ quantum dots"""
+        wavelengths = self.wavelength_range
+        photon_energy = 1240 / wavelengths
+        
+        # QD bandgap ~1.73 eV (size-dependent)
+        n = 2.4 + 0.08 / np.maximum((photon_energy - 1.2) ** 2, 1e-6)
+        
+        alpha = np.where(
+            photon_energy > 1.73,
+            7e4 * np.maximum(photon_energy - 1.73, 0) ** 0.5,
+            60 * np.exp((photon_energy - 1.73) / 0.035)
+        )
+        k = alpha * wavelengths * 1e-9 / (4 * np.pi)
         return n, k
     
     # =============================================================================
@@ -721,6 +1299,165 @@ def get_am15g_spectrum(wavelength_nm: np.ndarray) -> np.ndarray:
     return irradiance
 
 # =============================================================================
+# ABX₃ PEROVSKITE COMPOSITIONAL SPACE
+# =============================================================================
+
+class ABX3_CompositionSpace:
+    """
+    Defines the ABX₃ perovskite compositional space for solid solution modeling.
+    
+    Includes A-site, B-site, and X-site cations/anions with their properties.
+    """
+    
+    def __init__(self):
+        # A-site cations (organic and inorganic)
+        self.a_site_species = {
+            'MA': {  # Methylammonium CH₃NH₃⁺
+                'name': 'Methylammonium',
+                'formula': 'CH₃NH₃⁺',
+                'ionic_radius': 1.8,    # Å (estimated)
+                'electronegativity': 2.2,
+                'molecular_weight': 32.04,  # g/mol
+                'stability_factor': 0.6,    # Thermal/humidity stability
+                'common_combinations': ['Pb', 'Sn'],
+            },
+            
+            'FA': {  # Formamidinium CH(NH₂)₂⁺
+                'name': 'Formamidinium',
+                'formula': 'CH(NH₂)₂⁺',
+                'ionic_radius': 1.9,
+                'electronegativity': 2.1,
+                'molecular_weight': 46.07,
+                'stability_factor': 0.7,
+                'common_combinations': ['Pb', 'Sn'],
+            },
+            
+            'Cs': {  # Cesium Cs⁺
+                'name': 'Cesium',
+                'formula': 'Cs⁺',
+                'ionic_radius': 1.67,   # CN=8
+                'electronegativity': 0.79,
+                'molecular_weight': 132.91,
+                'stability_factor': 0.9,  # Inorganic = more stable
+                'common_combinations': ['Pb', 'Sn', 'Ge'],
+            },
+            
+            'Rb': {  # Rubidium Rb⁺
+                'name': 'Rubidium',
+                'formula': 'Rb⁺',
+                'ionic_radius': 1.52,
+                'electronegativity': 0.82,
+                'molecular_weight': 85.47,
+                'stability_factor': 0.8,
+                'common_combinations': ['Pb'],
+            }
+        }
+        
+        # B-site cations (metal cations in octahedral coordination)
+        self.b_site_species = {
+            'Pb': {  # Lead Pb²⁺
+                'name': 'Lead',
+                'formula': 'Pb²⁺',
+                'ionic_radius': 1.19,   # CN=6
+                'electronegativity': 2.33,
+                'molecular_weight': 207.20,
+                'oxidation_state': 2,
+                'toxicity_concern': True,
+                'band_character': 's-p',
+                'common_combinations': ['I', 'Br', 'Cl'],
+            },
+            
+            'Sn': {  # Tin Sn²⁺
+                'name': 'Tin',
+                'formula': 'Sn²⁺',
+                'ionic_radius': 1.10,
+                'electronegativity': 1.96,
+                'molecular_weight': 118.71,
+                'oxidation_state': 2,
+                'toxicity_concern': False,
+                'band_character': 's-p',
+                'oxidation_stability': 'poor',
+                'common_combinations': ['I', 'Br'],
+            },
+            
+            'Ge': {  # Germanium Ge²⁺
+                'name': 'Germanium',
+                'formula': 'Ge²⁺',
+                'ionic_radius': 0.87,
+                'electronegativity': 2.01,
+                'molecular_weight': 72.64,
+                'oxidation_state': 2,
+                'toxicity_concern': False,
+                'band_character': 's-p',
+                'stability_factor': 0.6,
+                'common_combinations': ['I'],
+            }
+        }
+        
+        # X-site anions (halides)
+        self.x_site_species = {
+            'I': {  # Iodide I⁻
+                'name': 'Iodide',
+                'formula': 'I⁻',
+                'ionic_radius': 2.20,   # CN=6
+                'electronegativity': 2.66,
+                'molecular_weight': 126.90,
+                'band_character': 'p',
+                'stability_air': 'moderate',
+                'absorption_edge': 'red',
+            },
+            
+            'Br': {  # Bromide Br⁻
+                'name': 'Bromide',
+                'formula': 'Br⁻',
+                'ionic_radius': 1.96,
+                'electronegativity': 2.96,
+                'molecular_weight': 79.90,
+                'band_character': 'p',
+                'stability_air': 'good',
+                'absorption_edge': 'yellow',
+            },
+            
+            'Cl': {  # Chloride Cl⁻
+                'name': 'Chloride',
+                'formula': 'Cl⁻',
+                'ionic_radius': 1.81,
+                'electronegativity': 3.16,
+                'molecular_weight': 35.45,
+                'band_character': 'p',
+                'stability_air': 'excellent',
+                'absorption_edge': 'blue',
+            }
+        }
+        
+        # Bowing parameters for mixed compositions
+        self.bowing_parameters = {
+            ('I', 'Br'): 0.33, ('I', 'Cl'): 0.65, ('Br', 'Cl'): 0.23,
+            ('Pb', 'Sn'): 0.25, ('Pb', 'Ge'): 0.40, ('Sn', 'Ge'): 0.20,
+            ('MA', 'FA'): 0.05, ('MA', 'Cs'): 0.15, ('FA', 'Cs'): 0.12, ('Cs', 'Rb'): 0.03
+        }
+    
+    def calculate_tolerance_factor(self, a_comp: Dict[str, float], 
+                                 b_comp: Dict[str, float], 
+                                 x_comp: Dict[str, float]) -> float:
+        """Calculate Goldschmidt tolerance factor for mixed composition."""
+        
+        r_a = sum(frac * self.a_site_species[ion]['ionic_radius'] 
+                 for ion, frac in a_comp.items() if frac > 0)
+        r_b = sum(frac * self.b_site_species[ion]['ionic_radius'] 
+                 for ion, frac in b_comp.items() if frac > 0)
+        r_x = sum(frac * self.x_site_species[ion]['ionic_radius'] 
+                 for ion, frac in x_comp.items() if frac > 0)
+        
+        if r_b == 0 or r_x == 0:
+            return 0.0
+        
+        return (r_a + r_x) / (np.sqrt(2) * (r_b + r_x))
+
+# Global instance
+ABX3_SPACE = ABX3_CompositionSpace()
+
+# =============================================================================
 # GLOBAL CONFIGURATION
 # =============================================================================
 
@@ -748,6 +1485,139 @@ DEFAULT_CONFIG = {
     'max_cte_mismatch': 30e-6,              # /K (thermal stress limit)
     'min_humidity_score': 5.0,              # Stability requirement
     'max_interface_resistance': 1e-3,       # Ω⋅cm² (tunneling junction)
+}
+
+# =============================================================================
+# TRACK B: ABX₃ SOLID SOLUTION COMPONENTS  
+# =============================================================================
+
+# A-site cations with ionic radii (Shannon 1976) and properties
+A_SITE_IONS = {
+    'MA': {  # Methylammonium CH₃NH₃⁺
+        'ionic_radius': 1.8,     # Å (estimated, effective)
+        'mass': 32.04,           # g/mol
+        'electronegativity': 2.2, # Pauling scale (estimated)
+        'stability_score': 3.0,  # /10 (humidity stability)
+        'cost_factor': 1.0,      # Relative cost multiplier
+        'organic': True,
+        'dipole_moment': 2.29    # Debye
+    },
+    'FA': {  # Formamidinium CH(NH₂)₂⁺
+        'ionic_radius': 1.9,     # Å 
+        'mass': 45.04,           # g/mol
+        'electronegativity': 2.1,
+        'stability_score': 4.0,  # Slightly more stable than MA
+        'cost_factor': 1.2,
+        'organic': True,
+        'dipole_moment': 0.2     # Much smaller dipole
+    },
+    'Cs': {  # Cesium Cs⁺
+        'ionic_radius': 1.67,    # Å (6-coordinate)
+        'mass': 132.91,          # g/mol
+        'electronegativity': 0.79,
+        'stability_score': 8.0,  # High thermal stability
+        'cost_factor': 2.5,      # Expensive
+        'organic': False,
+        'polarizability': 59.6   # Å³
+    },
+    'Rb': {  # Rubidium Rb⁺
+        'ionic_radius': 1.52,    # Å (6-coordinate)
+        'mass': 85.47,           # g/mol
+        'electronegativity': 0.82,
+        'stability_score': 7.5,  # Good stability
+        'cost_factor': 3.0,      # More expensive than Cs
+        'organic': False,
+        'polarizability': 40.8   # Å³
+    }
+}
+
+# B-site cations (metal centers)
+B_SITE_IONS = {
+    'Pb': {  # Lead Pb²⁺
+        'ionic_radius': 1.19,    # Å (6-coordinate)
+        'mass': 207.2,           # g/mol
+        'electronegativity': 2.33,
+        'stability_score': 7.0,  # Good for perovskites
+        'cost_factor': 1.0,      # Reference
+        'oxidation_state': 2,
+        'electron_config': '[Xe] 4f¹⁴ 5d¹⁰ 6s²',
+        'toxicity': 'high'       # Environmental concern
+    },
+    'Sn': {  # Tin Sn²⁺
+        'ionic_radius': 1.10,    # Å (6-coordinate)
+        'mass': 118.71,          # g/mol
+        'electronegativity': 1.96,
+        'stability_score': 4.0,  # Prone to oxidation Sn²⁺→Sn⁴⁺
+        'cost_factor': 0.8,      # Cheaper than Pb
+        'oxidation_state': 2,
+        'electron_config': '[Kr] 4d¹⁰ 5s²',
+        'toxicity': 'low'
+    },
+    'Ge': {  # Germanium Ge²⁺
+        'ionic_radius': 0.87,    # Å (6-coordinate)
+        'mass': 72.63,           # g/mol
+        'electronegativity': 2.01,
+        'stability_score': 5.0,  # Moderate stability
+        'cost_factor': 4.0,      # Expensive semiconductor material
+        'oxidation_state': 2,
+        'electron_config': '[Ar] 3d¹⁰ 4s²',
+        'toxicity': 'low'
+    }
+}
+
+# X-site halide anions
+X_SITE_IONS = {
+    'I': {   # Iodide I⁻
+        'ionic_radius': 2.20,    # Å (6-coordinate)
+        'mass': 126.90,          # g/mol
+        'electronegativity': 2.66,
+        'stability_score': 6.0,  # Good for perovskites
+        'cost_factor': 1.5,      # Moderate cost
+        'polarizability': 7.1,   # Å³ (high)
+        'bandgap_contribution': -0.5  # Lowers bandgap
+    },
+    'Br': {  # Bromide Br⁻
+        'ionic_radius': 1.96,    # Å (6-coordinate)
+        'mass': 79.90,           # g/mol
+        'electronegativity': 2.96,
+        'stability_score': 7.5,  # Better stability than I
+        'cost_factor': 2.0,      # More expensive than I
+        'polarizability': 4.2,   # Å³
+        'bandgap_contribution': 0.0  # Reference
+    },
+    'Cl': {  # Chloride Cl⁻
+        'ionic_radius': 1.81,    # Å (6-coordinate)
+        'mass': 35.45,           # g/mol
+        'electronegativity': 3.16,
+        'stability_score': 8.5,  # Highest stability
+        'cost_factor': 1.0,      # Cheapest
+        'polarizability': 3.0,   # Å³ (lowest)
+        'bandgap_contribution': 0.8  # Increases bandgap
+    }
+}
+
+# NREL efficiency records for benchmarking (as of 2024)
+NREL_RECORDS = {
+    'single_junction': {
+        'Si': {'PCE': 26.7, 'year': 2017, 'organization': 'Kaneka', 'area_cm2': 180.4},
+        'GaAs': {'PCE': 29.1, 'year': 2019, 'organization': 'Alta Devices', 'area_cm2': 0.9927},
+        'CIGS': {'PCE': 23.35, 'year': 2019, 'organization': 'Solar Frontier', 'area_cm2': 0.9927},
+        'CdTe': {'PCE': 22.1, 'year': 2016, 'organization': 'First Solar', 'area_cm2': 1.062},
+        'Perovskite': {'PCE': 25.7, 'year': 2021, 'organization': 'UNIST', 'area_cm2': 0.0937},
+        'OPV': {'PCE': 19.6, 'year': 2023, 'organization': 'Tsinghua', 'area_cm2': 0.0516}
+    },
+    'multi_junction': {
+        'GaInP/GaAs/Ge_3J': {'PCE': 39.2, 'year': 2013, 'organization': 'Sharp', 'area_cm2': 30.28, 'concentration': '302x'},
+        'GaInP/GaAs/InGaAs_3J': {'PCE': 37.9, 'year': 2013, 'organization': 'Solar Junction', 'area_cm2': 5.54, 'concentration': '418x'},
+        'GaInP/Si_2J': {'PCE': 32.8, 'year': 2017, 'organization': 'NREL', 'area_cm2': 1.0, 'concentration': '1x'},
+        'Perovskite/Si_2J': {'PCE': 31.3, 'year': 2020, 'organization': 'EPFL', 'area_cm2': 1.43, 'concentration': '1x'},
+        'CIGS/Perovskite_2J': {'PCE': 24.2, 'year': 2021, 'organization': 'HZB', 'area_cm2': 1.0, 'concentration': '1x'}
+    },
+    'emerging': {
+        'Quantum_Dots': {'PCE': 16.6, 'year': 2021, 'organization': 'U. Toronto', 'area_cm2': 1.0},
+        'Organic_Tandem': {'PCE': 17.3, 'year': 2019, 'organization': 'U. Michigan', 'area_cm2': 0.041},
+        'All_Perovskite_2J': {'PCE': 26.4, 'year': 2022, 'organization': 'KAUST', 'area_cm2': 0.049}
+    }
 }
 
 # Initialize global material database

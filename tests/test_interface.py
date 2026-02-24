@@ -217,7 +217,7 @@ class TestTunnelJunctionCalculator:
         barrier_width = 2.0     # nm
         doping_density = 1e20   # cm^-3
         
-        result = from engines.interface_loss import TunnelJunctionParams
+        from engines.interface_loss import TunnelJunctionParams
         params = TunnelJunctionParams(
             barrier_height=barrier_height,
             barrier_width=barrier_width,
@@ -250,7 +250,7 @@ class TestTunnelJunctionCalculator:
         resistances = []
         
         for width in widths:
-            result = from engines.interface_loss import TunnelJunctionParams
+            from engines.interface_loss import TunnelJunctionParams
         params = TunnelJunctionParams(
             barrier_height=barrier_height,
             barrier_width=width,
@@ -261,7 +261,7 @@ class TestTunnelJunctionCalculator:
             temperature=T_CELL
         )
         result = tunnel_calc.calculate_tunneling_resistance(params)
-            resistances.append(result['resistance_ohm_cm2'])
+        resistances.append(result['resistance_ohm_cm2'])
         
         # Resistance should increase with barrier width (exponentially)
         for i in range(1, len(resistances)):
@@ -280,7 +280,7 @@ class TestTunnelJunctionCalculator:
         resistances = []
         
         for doping in dopings:
-            result = from engines.interface_loss import TunnelJunctionParams
+            from engines.interface_loss import TunnelJunctionParams
         params = TunnelJunctionParams(
             barrier_height=barrier_height,
             barrier_width=barrier_width,
@@ -308,7 +308,7 @@ class TestTunnelJunctionCalculator:
         
         results = []
         for design in designs:
-            result = from engines.interface_loss import TunnelJunctionParams
+            from engines.interface_loss import TunnelJunctionParams
         params = TunnelJunctionParams(
             barrier_height=**design)
             results.append(result)
@@ -338,7 +338,7 @@ class TestTunnelJunctionCalculator:
         result = tunnel_calc.calculate_tunneling_resistance(params)
         
         # Thick barrier should have low tunneling probability
-        thick_result = from engines.interface_loss import TunnelJunctionParams
+        thick_from engines.interface_loss import TunnelJunctionParams
         params = TunnelJunctionParams(
             barrier_height=barrier_height=1.0,
             barrier_width=barrier_width=4.0,
@@ -442,7 +442,7 @@ class TestIntegration:
         interface_result = loss_calc.calculate_total_interface_losses(stack)
         
         # Calculate tunnel junction resistance
-        tunnel_result = from engines.interface_loss import TunnelJunctionParams
+        tunnel_from engines.interface_loss import TunnelJunctionParams
         params = TunnelJunctionParams(
             barrier_height=barrier_height=0.8,
             barrier_width=barrier_width=2.0,
@@ -494,7 +494,7 @@ def test_realistic_device_analysis():
     print(f"Tandem junction loss: {result_2j['total_loss_fraction']:.3f}")
     
     # Tunnel junction resistance
-    tunnel_result = from engines.interface_loss import TunnelJunctionParams
+    tunnel_from engines.interface_loss import TunnelJunctionParams
         params = TunnelJunctionParams(
             barrier_height=1.0,
             barrier_width=2.0,
