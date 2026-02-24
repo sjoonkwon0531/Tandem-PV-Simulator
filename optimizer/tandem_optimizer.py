@@ -23,12 +23,12 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import MATERIAL_DB, TRACK_A_MATERIALS, TRACK_B_MATERIALS
+from config import MATERIAL_DB
 from engines.optical_tmm import TransferMatrixCalculator
 from engines.band_alignment import DetailedBalanceCalculator, BandgapOptimizer
-from engines.interface_loss import InterfaceLossCalculator, TunnelJunctionCalculator
-from engines.thermal_model import ThermalExpansionModel
-from engines.stability import StabilityEngine
+from engines.interface_loss import InterfaceLossCalculator
+from engines.thermal_model import ThermalStressCalculator
+from engines.stability import StabilityPredictor
 from engines.economics import EconomicsEngine
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -67,14 +67,14 @@ class TandemOptimizer:
         self.band_engine = DetailedBalanceCalculator()
         self.bandgap_optimizer = BandgapOptimizer()
         self.interface_engine = InterfaceLossCalculator()
-        self.tunnel_engine = TunnelJunctionCalculator()
-        self.thermal_engine = ThermalExpansionModel()
-        self.stability_engine = StabilityEngine()
+        self.tunnel_engine = InterfaceLossCalculator()
+        self.thermal_engine = ThermalStressCalculator()
+        self.stability_engine = StabilityPredictor()
         self.economics_engine = EconomicsEngine()
         
         # Material databases
         self.material_db = MATERIAL_DB
-        self.available_materials = TRACK_A_MATERIALS if track == 'A' else TRACK_B_MATERIALS
+        self.available_materials = MATERIAL_DB.list_materials(track)
         
         # Optimization constraints
         self.constraints = {
