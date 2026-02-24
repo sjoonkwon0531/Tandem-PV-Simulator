@@ -1,0 +1,172 @@
+{
+  "A_2T": [
+    {
+      "bandgaps": [
+        2.4,
+        1.1
+      ],
+      "pce": 23.040000000000003,
+      "jsc": 14.0,
+      "voc": 1.4000000000000001,
+      "ff": 0.83,
+      "objective": "fallback",
+      "current_match_error": 0.1,
+      "confidence": "low"
+    }
+  ],
+  "A_3T": [
+    {
+      "bandgaps": [
+        2.4,
+        1.75,
+        1.1
+      ],
+      "pce": 27.36,
+      "jsc": 14.0,
+      "voc": 2.1,
+      "ff": 0.83,
+      "objective": "fallback",
+      "current_match_error": 0.1,
+      "confidence": "low"
+    }
+  ],
+  "A_4T": [
+    {
+      "bandgaps": [
+        2.4,
+        1.9666666666666666,
+        1.5333333333333332,
+        1.1
+      ],
+      "pce": 30.240000000000002,
+      "jsc": 14.0,
+      "voc": 2.8000000000000003,
+      "ff": 0.83,
+      "objective": "fallback",
+      "current_match_error": 0.1,
+      "confidence": "low"
+    }
+  ],
+  "A_5T": [
+    {
+      "bandgaps": [
+        2.4,
+        2.075,
+        1.75,
+        1.425,
+        1.1
+      ],
+      "pce": 32.4,
+      "jsc": 14.0,
+      "voc": 3.5,
+      "ff": 0.83,
+      "objective": "fallback",
+      "current_match_error": 0.1,
+      "confidence": "low"
+    }
+  ],
+  "A_6T": [
+    {
+      "bandgaps": [
+        2.4,
+        2.14,
+        1.88,
+        1.62,
+        1.36,
+        1.1
+      ],
+      "pce": 33.84,
+      "jsc": 14.0,
+      "voc": 4.199999999999999,
+      "ff": 0.83,
+      "objective": "fallback",
+      "current_match_error": 0.1,
+      "confidence": "low"
+    }
+  ],
+  "B_2T": [
+    {
+      "bandgaps": [
+        2.6,
+        1.4
+      ],
+      "pce": 21.888,
+      "jsc": 14.0,
+      "voc": 1.6,
+      "ff": 0.83,
+      "objective": "fallback",
+      "current_match_error": 0.1,
+      "confidence": "low"
+    }
+  ],
+  "B_3T": [
+    {
+      "bandgaps": [
+        2.6,
+        2.0,
+        1.4
+      ],
+      "pce": 25.992,
+      "jsc": 14.0,
+      "voc": 2.4000000000000004,
+      "ff": 0.83,
+      "objective": "fallback",
+      "current_match_error": 0.1,
+      "confidence": "low"
+    }
+  ],
+  "B_4T": [
+    {
+      "bandgaps": [
+        2.6,
+        2.2,
+        1.7999999999999998,
+        1.4
+      ],
+      "pce": 28.728,
+      "jsc": 14.0,
+      "voc": 3.2,
+      "ff": 0.83,
+      "objective": "fallback",
+      "current_match_error": 0.1,
+      "confidence": "low"
+    }
+  ],
+  "B_5T": [
+    {
+      "bandgaps": [
+        2.6,
+        2.3,
+        2.0,
+        1.7,
+        1.4
+      ],
+      "pce": 30.780000000000005,
+      "jsc": 14.0,
+      "voc": 4.0,
+      "ff": 0.83,
+      "objective": "fallback",
+      "current_match_error": 0.1,
+      "confidence": "low"
+    }
+  ],
+  "B_6T": [
+    {
+      "bandgaps": [
+        2.6,
+        2.36,
+        2.12,
+        1.88,
+        1.64,
+        1.4
+      ],
+      "pce": 32.148,
+      "jsc": 14.0,
+      "voc": 4.800000000000001,
+      "ff": 0.83,
+      "objective": "fallback",
+      "current_match_error": 0.1,
+      "confidence": "low"
+    }
+  ]
+}
