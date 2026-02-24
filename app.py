@@ -420,37 +420,97 @@ def run_stage1(track_code: str, n_junctions: int, electrode_top: str,
     }
 
 def calculate_stack_absorption_from_db(stack: List, wavelengths=None) -> np.ndarray:
-    """Estimate absorption spectrum from database properties"""
+    """
+    Estimate absorption spectrum from database properties.
+    Uses Elliott model for direct-gap perovskite absorption:
+      - Continuum: α ∝ sqrt(E - Eg) for E > Eg
+      - Excitonic enhancement near band edge
+      - Urbach tail below Eg (Eu ~ 15-25 meV for perovskite)
+      - High-energy saturation (α plateaus above ~2*Eg)
+    """
     if wavelengths is None:
-        wavelengths = np.linspace(300, 1200, 100)
+        wavelengths = np.linspace(300, 1200, 200)  # Higher resolution
     
+    photon_energies = 1240.0 / wavelengths  # eV
+    
+    # Track remaining light (Beer-Lambert through stack)
+    transmitted = np.ones_like(wavelengths, dtype=float)
     total_absorption = np.zeros_like(wavelengths)
     
     for layer in stack:
         if layer.get('type', 'other') == 'absorber':
-            # Get absorption coefficient from database
+            # Get material properties
             if 'composition' in layer:
-                alpha_500 = layer['composition']['absorption_coeff_500nm']
+                alpha_ref = layer['composition']['absorption_coeff_500nm']  # cm⁻¹ at 500nm
                 bandgap = layer['composition']['Eg']
             else:
-                alpha_500 = layer['properties'].get('absorption_coeff_500nm', 50000)
+                alpha_ref = layer['properties'].get('absorption_coeff_500nm', 50000)
                 bandgap = layer['properties']['bandgap']
             
-            # Estimate spectrum assuming Urbach tail + direct gap
-            photon_energies = 1240 / wavelengths  # eV
+            E_ref = 1240.0 / 500.0  # 2.48 eV (500nm reference)
+            thickness_cm = layer.get('thickness_nm', 300) * 1e-7
             
-            # Above bandgap: direct absorption
-            alpha = np.where(
-                photon_energies > bandgap,
-                alpha_500 * np.sqrt(np.maximum(photon_energies - bandgap, 0) / 0.48),  # Scale to 500nm
-                alpha_500 * 0.001 * np.exp((photon_energies - bandgap) / 0.015)  # Urbach tail
+            # Urbach energy (perovskite: 15-25 meV; wider gap → slightly larger)
+            Eu = 0.015 + 0.005 * max(0, bandgap - 1.5)  # 15-25 meV
+            
+            # Build absorption coefficient spectrum
+            alpha = np.zeros_like(photon_energies)
+            
+            above_gap = photon_energies > bandgap
+            below_gap = ~above_gap
+            
+            # --- Above bandgap: Elliott model (continuum + excitonic) ---
+            dE = np.maximum(photon_energies[above_gap] - bandgap, 1e-6)
+            dE_ref = max(E_ref - bandgap, 0.1)
+            
+            # Continuum: α ∝ √(E - Eg), normalized to α_ref at 500nm
+            alpha_continuum = alpha_ref * np.sqrt(dE / dE_ref)
+            
+            # Excitonic enhancement near band edge (Lorentzian peak)
+            # Perovskite exciton binding energy ~10-50 meV
+            Eb = 0.025  # 25 meV typical for lead halide perovskite
+            exciton_enhancement = 1.0 + 2.0 * Eb / (dE + Eb)  # Sommerfeld factor approx
+            
+            alpha_above = alpha_continuum * exciton_enhancement
+            
+            # High-energy saturation: α plateaus (interband transitions saturate)
+            saturation_energy = bandgap + 1.5  # ~1.5 eV above Eg
+            sat_factor = np.where(
+                photon_energies[above_gap] > saturation_energy,
+                1.0 + 0.1 * np.log(1 + photon_energies[above_gap] - saturation_energy),
+                1.0
             )
+            alpha_above *= sat_factor
             
-            # Beer-Lambert absorption
-            thickness_cm = layer.get('thickness_nm', 0) * 1e-7
-            layer_absorption = 1 - np.exp(-alpha * thickness_cm)
+            alpha[above_gap] = alpha_above
             
-            total_absorption += layer_absorption * 0.9**len(stack)  # Rough interference
+            # --- Below bandgap: Urbach tail ---
+            alpha[below_gap] = alpha_ref * np.sqrt(0.01 / max(dE_ref, 0.1)) * \
+                               np.exp((photon_energies[below_gap] - bandgap) / Eu)
+            
+            # Beer-Lambert with remaining transmitted light
+            layer_absorption = transmitted * (1 - np.exp(-alpha * thickness_cm))
+            total_absorption += layer_absorption
+            transmitted *= np.exp(-alpha * thickness_cm)
+        
+        elif layer.get('type', 'other') in ('etl', 'htl'):
+            # Transport layers: slight parasitic absorption at short wavelengths
+            thickness_cm = layer.get('thickness_nm', 50) * 1e-7
+            # Approximate: weak absorption below 350nm for TiO2/SnO2, Spiro etc.
+            parasitic_alpha = np.where(wavelengths < 380, 5000 * np.exp(-(wavelengths - 300) / 30), 100)
+            parasitic = transmitted * (1 - np.exp(-parasitic_alpha * thickness_cm))
+            total_absorption += parasitic * 0.0  # Don't count as useful absorption
+            transmitted *= np.exp(-parasitic_alpha * thickness_cm)
+        
+        elif layer.get('type', 'other') == 'electrode':
+            # Front electrode (ITO/FTO): ~10% reflection + parasitic absorption
+            thickness_cm = layer.get('thickness_nm', 100) * 1e-7
+            # ITO: high transparency 400-900nm, absorbs in UV and NIR
+            ito_alpha = np.where(wavelengths < 350, 30000, 
+                        np.where(wavelengths > 900, 5000 * ((wavelengths - 900) / 300)**2, 200))
+            parasitic = transmitted * (1 - np.exp(-ito_alpha * thickness_cm))
+            total_absorption += parasitic * 0.0
+            transmitted *= np.exp(-ito_alpha * thickness_cm)
     
     return np.clip(total_absorption, 0, 1)
 
