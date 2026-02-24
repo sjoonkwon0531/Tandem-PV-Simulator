@@ -648,16 +648,46 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
             ].copy()
             
             if len(candidates) > 0:
-                # Score and rank
+                # Score and rank: weighted by accuracy + stability + confidence
                 candidates['accuracy'] = abs(candidates['Eg'] - target_eg)
-                candidates = candidates.sort_values(['accuracy', 'stability_score'], 
-                                                   ascending=[True, False])
+                candidates['composite_score'] = (
+                    (1 - candidates['accuracy'] / 0.1) * 0.3 +  # Eg accuracy
+                    candidates['stability_score'] / 10 * 0.35 +  # Stability
+                    candidates['confidence'] / 3 * 0.2 +         # Confidence
+                    candidates.get('defect_tolerance', 0.5) * 0.15  # Defect tolerance
+                )
+                candidates = candidates.sort_values('composite_score', ascending=False)
                 
                 st.write(f"🎯 Found {len(candidates)} stable compositions within ±0.1 eV")
                 
-                # Top 3 candidates
-                for i in range(min(3, len(candidates))):
-                    comp = candidates.iloc[i]
+                # Diverse Top 3: pick candidates with different B-site or X-site compositions
+                selected = []
+                for _, row in candidates.iterrows():
+                    if len(selected) >= 3:
+                        break
+                    # Check diversity: at least one major composition difference
+                    is_diverse = True
+                    for prev in selected:
+                        # Require meaningful difference in at least one site
+                        b_diff = abs(row['B_Pb'] - prev['B_Pb']) + abs(row['B_Sn'] - prev['B_Sn'])
+                        x_diff = abs(row['X_I'] - prev['X_I']) + abs(row['X_Br'] - prev['X_Br']) + abs(row['X_Cl'] - prev['X_Cl'])
+                        a_diff = abs(row['A_MA'] - prev['A_MA']) + abs(row['A_FA'] - prev['A_FA']) + abs(row['A_Cs'] - prev['A_Cs'])
+                        if b_diff < 0.2 and x_diff < 0.2 and a_diff < 0.2:
+                            is_diverse = False
+                            break
+                    if is_diverse:
+                        selected.append(row)
+                
+                # Fallback: if diversity filter too strict, fill with top remaining
+                if len(selected) < 3:
+                    for _, row in candidates.iterrows():
+                        if len(selected) >= 3:
+                            break
+                        if not any(row.name == s.name for s in selected):
+                            selected.append(row)
+                
+                # Display
+                for i, comp in enumerate(selected):
                     
                     with st.expander(f"💎 Candidate {i+1}: Eg = {comp['Eg']:.3f} eV"):
                         col1, col2, col3 = st.columns(3)
