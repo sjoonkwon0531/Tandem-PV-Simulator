@@ -689,7 +689,16 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                 # Display
                 for i, comp in enumerate(selected):
                     
-                    with st.expander(f"💎 Candidate {i+1}: Eg = {comp['Eg']:.3f} eV"):
+                    # Build compact composition label
+                    a_parts = [f"{'MA' if k=='A_MA' else 'FA' if k=='A_FA' else 'Cs' if k=='A_Cs' else 'Rb'}{comp[k]:.0%}" 
+                               for k in ['A_MA','A_FA','A_Cs'] if comp.get(k, 0) > 0.05]
+                    b_parts = [f"{'Pb' if k=='B_Pb' else 'Sn' if k=='B_Sn' else 'Ge'}{comp[k]:.0%}" 
+                               for k in ['B_Pb','B_Sn'] if comp.get(k, 0) > 0.05]
+                    x_parts = [f"{'I' if k=='X_I' else 'Br' if k=='X_Br' else 'Cl'}{comp[k]:.0%}" 
+                               for k in ['X_I','X_Br','X_Cl'] if comp.get(k, 0) > 0.05]
+                    comp_label = f"({'/'.join(a_parts)})({'/'.join(b_parts)})({'/'.join(x_parts)})₃"
+                    
+                    with st.expander(f"💎 Candidate {i+1}: Eg = {comp['Eg']:.3f} eV — {comp_label}"):
                         col1, col2, col3 = st.columns(3)
                         
                         with col1:
