@@ -112,6 +112,11 @@ class TunnelJunctionCalculator:
         """
         Calculate series resistance of tunnel junction using WKB approximation.
         
+        FIXED: Include electric field effect on barrier shape for field-assisted tunneling
+        (Fowler-Nordheim regime). Effective barrier width under field F: w_eff = φ_B / (q × F) 
+        for triangular barrier. Add field parameter and use trapezoidal barrier approximation 
+        when field is moderate.
+        
         Args:
             junction_params: Tunnel junction parameters
             
@@ -139,28 +144,69 @@ class TunnelJunctionCalculator:
         # Built-in potential (simplified)
         V_bi = self.Vt * np.log((N_top * N_bottom) / (1e20)**2)  # V
         
-        # Tunneling barrier width (triangular approximation)
+        # Electric field across junction
+        electric_field = V_bi / thickness  # V/m
+        
+        # FIXED: Field-assisted tunneling with proper barrier shape
         if thickness < L_D_top + L_D_bottom:
             # Ultra-thin junction - direct tunneling dominates
+            # Rectangular barrier approximation
             barrier_width = thickness
             effective_barrier = barrier_height
+            tunneling_regime = 'direct'
+            
+        elif electric_field * thickness > barrier_height:
+            # High-field regime: Fowler-Nordheim tunneling
+            # Triangular barrier: barrier drops linearly with distance
+            # w_eff = φ_B / (q × F) for triangular barrier
+            barrier_width = barrier_height / (Q * electric_field * 1e-9)  # Convert eV to J
+            if barrier_width > thickness:
+                barrier_width = thickness
+            effective_barrier = barrier_height  # Peak barrier height
+            tunneling_regime = 'fowler_nordheim'
+            
         else:
-            # Thick junction - field-assisted tunneling
-            electric_field = V_bi / thickness  # V/m
-            barrier_width = np.sqrt(2 * barrier_height * Q / (Q * electric_field))
-            effective_barrier = barrier_height * (barrier_width / thickness)
+            # Moderate field: Trapezoidal barrier approximation  
+            # Barrier has flat top with field-assisted thinning at edges
+            field_reduction = min(0.5, Q * electric_field * thickness / (2 * barrier_height))
+            barrier_width = thickness * (1 - field_reduction)
+            effective_barrier = barrier_height * (1 - 0.5 * field_reduction)
+            tunneling_regime = 'trapezoidal'
         
-        # WKB tunneling probability
-        # T = exp(-2 * integral of sqrt(2m*(V-E))/ħ dx)
-        gamma = 2 * np.sqrt(2 * m_eff * effective_barrier * Q) / H  # m⁻¹
-        tunneling_probability = np.exp(-gamma * barrier_width)
+        # WKB tunneling probability calculation depends on barrier shape
+        if tunneling_regime == 'fowler_nordheim':
+            # For triangular barrier: ∫√(2m(V-qFx)) dx from 0 to w_eff
+            # Analytical result for triangular barrier
+            gamma_integral = (4/3) * np.sqrt(2 * m_eff) / H * (barrier_height * Q)**(3/2) / (Q * electric_field)
+            tunneling_probability = np.exp(-2 * gamma_integral)
+            
+        elif tunneling_regime == 'trapezoidal':
+            # Trapezoidal barrier: flat top + field-assisted edges
+            # Approximate as effective rectangular barrier
+            gamma = 2 * np.sqrt(2 * m_eff * effective_barrier * Q) / H  # m⁻¹
+            tunneling_probability = np.exp(-gamma * barrier_width)
+            
+        else:  # direct tunneling
+            # Rectangular barrier
+            gamma = 2 * np.sqrt(2 * m_eff * effective_barrier * Q) / H  # m⁻¹
+            tunneling_probability = np.exp(-gamma * barrier_width)
         
         # Current density from Tsu-Esaki formula
         # J = (q*m_eff*k*T/(2*π*ħ²)) * ln(1 + exp(qV/kT)) * T_tunnel
         prefactor = Q * m_eff * KB * self.T / (2 * np.pi * H**2)  # A⋅m⁻²⋅V⁻¹
         
+        # Field enhancement factor for high-field regime
+        if tunneling_regime == 'fowler_nordheim':
+            # Field enhancement increases prefactor
+            field_enhancement = 1 + 0.1 * electric_field / 1e7  # Modest enhancement per 10 MV/m
+            prefactor *= field_enhancement
+        
         # Differential conductance (dJ/dV at V=0)
         conductance_per_area = prefactor * tunneling_probability  # S⋅m⁻²
+        
+        # Ensure minimum conductance for numerical stability
+        min_conductance = 1e-10  # S⋅m⁻²
+        conductance_per_area = max(conductance_per_area, min_conductance)
         
         # Convert to resistance
         resistance_area = 1 / conductance_per_area * 1e-4  # Ω⋅cm²
@@ -168,36 +214,79 @@ class TunnelJunctionCalculator:
         return resistance_area
     
     def calculate_recombination_current(self, junction_params: TunnelJunctionParams,
-                                      current_density: float) -> float:
+                                      current_density: float,
+                                      defect_density: float = 1e12,
+                                      trap_energy: float = 0.5) -> float:
         """
-        Calculate recombination current at tunnel junction interface.
+        Calculate recombination current at tunnel junction interface using proper SRH theory.
+        
+        FIXED: Add Shockley-Read-Hall recombination at interface:
+        R_SRH = (n×p - ni²) / (τ_p×(n+n1) + τ_n×(p+p1))
+        where n1, p1 are trap-level carrier densities. Add defect_density and trap_energy 
+        parameters with reasonable defaults.
         
         Args:
             junction_params: Tunnel junction parameters
             current_density: Operating current density (A/cm²)
+            defect_density: Interface defect density (cm⁻²)
+            trap_energy: Trap energy level relative to intrinsic level (eV)
             
         Returns:
             Recombination current density (A/cm²)
         """
         
-        # Interface recombination velocity
+        # Interface recombination velocity (for simple surface recombination)
         S_eff = junction_params.interface_recombination_velocity  # cm/s
         
-        # Intrinsic carrier concentration (approximation)
-        Eg_eff = 1.0  # eV, effective bandgap at interface
-        ni_eff = 1e10 * np.exp(-Eg_eff / (2 * self.Vt))  # cm⁻³
+        # Material properties for SRH recombination
+        Eg_eff = 1.2  # eV, effective bandgap at interface (reasonable for most junctions)
+        ni_eff = 1e10 * np.exp(-Eg_eff / (2 * self.Vt))  # cm⁻³, intrinsic carrier concentration
         
-        # Excess carrier concentration
+        # Excess carrier concentration from current density
         # Δn ≈ Δp ≈ J / (q * v_th) where v_th is thermal velocity
         v_th = np.sqrt(3 * KB * self.T / 9.109e-31) * 1e2  # cm/s, electron thermal velocity
         excess_carriers = current_density / (Q * v_th)  # cm⁻³
         
-        # Interface recombination current (simplified SRH)
-        # J_rec = q * S_eff * Δn * Δp / (Δn + Δp + 2*ni_eff)
-        recombination_current = (Q * S_eff * excess_carriers**2 / 
-                               (2 * excess_carriers + 2 * ni_eff))  # A/cm²
+        # Total carrier concentrations (equilibrium + excess)
+        n_total = ni_eff + excess_carriers  # electrons
+        p_total = ni_eff + excess_carriers  # holes (assume charge neutrality)
         
-        return recombination_current
+        # FIXED: Proper SRH recombination parameters
+        # Trap energy level carrier concentrations
+        n1 = ni_eff * np.exp(trap_energy / self.Vt)   # electrons when trap is occupied
+        p1 = ni_eff * np.exp(-trap_energy / self.Vt)  # holes when trap is empty
+        
+        # SRH lifetimes from defect density and capture cross-sections
+        # τ = 1 / (σ × v_th × N_t) where σ is capture cross-section, N_t is trap density
+        sigma_n = 1e-15  # cm², electron capture cross-section (typical)
+        sigma_p = 1e-15  # cm², hole capture cross-section
+        
+        # Convert defect density from cm⁻² to cm⁻³ assuming interface thickness
+        interface_thickness = 1e-7  # 1 nm effective interface thickness
+        N_t = defect_density / interface_thickness  # cm⁻³
+        
+        # SRH lifetimes
+        tau_n = 1 / (sigma_n * v_th * N_t)  # electron lifetime
+        tau_p = 1 / (sigma_p * v_th * N_t)  # hole lifetime
+        
+        # SRH recombination rate (carriers per cm³ per second)
+        if (tau_p * (n_total + n1) + tau_n * (p_total + p1)) > 0:
+            R_SRH = (n_total * p_total - ni_eff**2) / (tau_p * (n_total + n1) + tau_n * (p_total + p1))
+        else:
+            R_SRH = 0.0
+        
+        # Convert recombination rate to current density
+        # J_rec = q × R_SRH × interface_thickness
+        recombination_current_SRH = Q * R_SRH * interface_thickness * 1e1  # A/cm² (unit conversion)
+        
+        # Also include simple surface recombination (empirical)
+        # J_rec_surface = q * S_eff * excess_carriers
+        recombination_current_surface = Q * S_eff * excess_carriers * 1e-3  # A/cm²
+        
+        # Total recombination current is sum of SRH and surface recombination
+        total_recombination_current = recombination_current_SRH + recombination_current_surface
+        
+        return total_recombination_current
     
     def calculate_band_alignment_loss(self, top_material: str, bottom_material: str,
                                     track: str = 'A') -> Dict[str, float]:
@@ -410,8 +499,19 @@ class InterfaceLossCalculator:
         # Tunneling resistance
         R_tunnel = self.tj_calc.calculate_tunneling_resistance(tj_params)
         
-        # Recombination current
-        J_rec = self.tj_calc.calculate_recombination_current(tj_params, current_density)
+        # Recombination current with improved SRH model
+        # Use material-dependent defect density estimates
+        if 'perovskite' in tj_params.top_material.lower() or 'perovskite' in tj_params.bottom_material.lower():
+            defect_density = 5e12  # Higher defect density for perovskites
+            trap_energy = 0.4      # eV, typical for perovskite defects
+        elif 'III-V' in tj_params.top_material or 'GaAs' in tj_params.top_material or 'GaInP' in tj_params.top_material:
+            defect_density = 1e11  # Lower defect density for high-quality III-V
+            trap_energy = 0.6      # eV, mid-gap states
+        else:
+            defect_density = 1e12  # Default moderate defect density
+            trap_energy = 0.5      # eV, mid-gap
+        
+        J_rec = self.tj_calc.calculate_recombination_current(tj_params, current_density, defect_density, trap_energy)
         
         # Band alignment loss
         band_loss = self.tj_calc.calculate_band_alignment_loss(

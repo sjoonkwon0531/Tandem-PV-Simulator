@@ -517,8 +517,11 @@ class ThermalStressCalculator:
         substrate_biaxial_modulus = substrate_props.young_modulus / (1 - substrate_props.poisson_ratio)
         curvature = (6 * total_force_per_width) / (substrate_biaxial_modulus * substrate_props.thickness**2)
         
-        # Critical thickness for cracking (Griffith criterion)
-        critical_thickness = self._calculate_critical_thickness(layer_props, stress_per_layer)
+        # Critical thickness for cracking and delamination (includes Griffith energy release rate)
+        # Estimate adhesion energy based on material combinations
+        # Default 1 J/m² for perovskite/oxide, 2 J/m² for covalent bonds, 0.5 J/m² for weak interfaces
+        avg_adhesion = 1.0  # J/m², reasonable default for most tandem interfaces
+        critical_thickness = self._calculate_critical_thickness(layer_props, stress_per_layer, avg_adhesion)
         
         # Thermal fatigue estimation
         fatigue_cycles = self._estimate_thermal_fatigue_cycles(stress_per_layer, dT)
@@ -540,32 +543,55 @@ class ThermalStressCalculator:
         )
     
     def _calculate_critical_thickness(self, layer_props: List[ThermalProperties], 
-                                    stresses: List[float]) -> List[float]:
-        """Calculate critical thickness for crack initiation in each layer"""
+                                    stresses: List[float],
+                                    adhesion_energy: float = 1.0) -> List[float]:
+        """Calculate critical thickness for crack initiation and delamination in each layer.
+        
+        FIXED: Add delamination check using Griffith energy release rate:
+        G = σ²×t/(2E'). Compare G to interface adhesion energy Γ. If G > Γ, flag delamination risk.
+        Add adhesion_energy parameter (default ~1 J/m² for perovskite/oxide interfaces).
+        """
         
         critical_thicknesses = []
         
         for props, stress in zip(layer_props, stresses):
-            # Simplified Griffith criterion
-            # t_critical = K_Ic² / (Y * σ²) where Y is geometric factor
-            
             # Estimate fracture toughness based on material type
             if 'perovskite' in props.material_name.lower() or 'MAP' in props.material_name or 'FA' in props.material_name:
                 K_Ic = 0.5e6  # Pa⋅m^0.5 (low toughness)
+                default_adhesion = 0.5  # J/m², weaker perovskite interfaces
             elif 'Si' in props.material_name:
                 K_Ic = 0.8e6  # Pa⋅m^0.5
+                default_adhesion = 2.0  # J/m², strong covalent bonding
             elif 'GaAs' in props.material_name or 'GaInP' in props.material_name:
                 K_Ic = 0.6e6  # Pa⋅m^0.5
+                default_adhesion = 1.5  # J/m², moderate III-V bonding
             else:
                 K_Ic = 0.7e6  # Pa⋅m^0.5 (default)
+                default_adhesion = 1.0  # J/m², default
             
-            # Geometric factor (edge crack)
-            Y = 1.12
+            # Use provided adhesion energy or material default
+            interface_adhesion = adhesion_energy if adhesion_energy != 1.0 else default_adhesion
             
+            # Critical thickness from crack propagation (Griffith criterion)
+            Y = 1.12  # Geometric factor (edge crack)
             if abs(stress) > 1e6:  # Avoid division by very small stress
-                t_critical = (K_Ic / (Y * abs(stress)))**2
+                t_critical_crack = (K_Ic / (Y * abs(stress)))**2
             else:
-                t_critical = 1e-3  # 1 mm default (very thick)
+                t_critical_crack = 1e-3  # 1 mm default (very thick)
+            
+            # FIXED: Critical thickness from delamination (Griffith energy release rate)
+            # Energy release rate: G = σ²×t/(2E') where E' = E/(1-ν²) is plane strain modulus
+            E_prime = props.young_modulus / (1 - props.poisson_ratio**2)
+            
+            if abs(stress) > 1e6 and E_prime > 0:
+                # Delamination occurs when G > Γ (adhesion energy)
+                # Solving G = σ²×t/(2E') = Γ for t gives:
+                t_critical_delamination = 2 * E_prime * interface_adhesion / (stress**2)
+            else:
+                t_critical_delamination = 1e-3  # 1 mm default (very thick)
+            
+            # The actual critical thickness is the minimum of crack and delamination limits
+            t_critical = min(t_critical_crack, t_critical_delamination)
             
             critical_thicknesses.append(t_critical)
         

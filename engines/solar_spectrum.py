@@ -282,14 +282,18 @@ class RealisticSolarSpectrum:
     
     def atmospheric_transmission(self, air_mass: float, 
                                relative_humidity: float = 50.0,
-                               altitude: float = 0.0) -> np.ndarray:
+                               altitude: float = 0.0,
+                               aerosol_type: str = 'rural') -> np.ndarray:
         """
         Calculate atmospheric transmission spectrum.
+        
+        FIXED: Add aerosol_type parameter with presets for different environments.
         
         Args:
             air_mass: Air mass
             relative_humidity: Relative humidity [%]
             altitude: Altitude [m above sea level]
+            aerosol_type: Aerosol environment type - 'rural', 'urban', 'maritime', 'desert'
             
         Returns:
             Transmission spectrum (0-1)
@@ -333,10 +337,23 @@ class RealisticSolarSpectrum:
             
             transmission *= molecular_transmission
         
-        # Aerosol scattering (simplified)
-        # Assume Ångström turbidity with typical values
-        beta_500 = 0.1  # Turbidity coefficient at 500nm
-        alpha = 1.3     # Ångström exponent
+        # FIXED: Aerosol scattering with configurable parameters by aerosol type
+        # Ångström turbidity law: τ_aer(λ) = β × (λ/500nm)^(-α)
+        aerosol_params = {
+            'rural': {'beta_500': 0.05, 'alpha': 1.3},     # Clean rural environment
+            'urban': {'beta_500': 0.1, 'alpha': 1.3},      # Urban/suburban 
+            'maritime': {'beta_500': 0.08, 'alpha': 0.8},  # Ocean/coastal (larger particles)
+            'desert': {'beta_500': 0.25, 'alpha': 0.5},    # Desert dust (very large particles)
+        }
+        
+        # Get parameters for specified aerosol type
+        if aerosol_type in aerosol_params:
+            beta_500 = aerosol_params[aerosol_type]['beta_500']
+            alpha = aerosol_params[aerosol_type]['alpha']
+        else:
+            # Default to rural if unknown type
+            beta_500 = aerosol_params['rural']['beta_500']
+            alpha = aerosol_params['rural']['alpha']
         
         aerosol_optical_depth = beta_500 * (wavelengths / 500)**(-alpha) * effective_am
         aerosol_transmission = np.exp(-aerosol_optical_depth)
@@ -350,7 +367,8 @@ class RealisticSolarSpectrum:
     
     def calculate_spectrum(self, air_mass: float, 
                           relative_humidity: float = 50.0,
-                          altitude: float = 0.0) -> SpectralData:
+                          altitude: float = 0.0,
+                          aerosol_type: str = 'rural') -> SpectralData:
         """
         Calculate realistic solar spectrum for given conditions.
         
@@ -358,6 +376,7 @@ class RealisticSolarSpectrum:
             air_mass: Air mass
             relative_humidity: Relative humidity [%]
             altitude: Observer altitude [m]
+            aerosol_type: Aerosol environment type
             
         Returns:
             SpectralData with realistic spectrum
@@ -367,7 +386,7 @@ class RealisticSolarSpectrum:
         am0_spectrum = self.extraterrestrial_spectrum()
         
         # Calculate atmospheric transmission
-        transmission = self.atmospheric_transmission(air_mass, relative_humidity, altitude)
+        transmission = self.atmospheric_transmission(air_mass, relative_humidity, altitude, aerosol_type)
         
         # Apply transmission to extraterrestrial spectrum
         surface_irradiance = am0_spectrum.irradiance * transmission
@@ -385,7 +404,8 @@ class RealisticSolarSpectrum:
     def daily_irradiance_profile(self, latitude: float, day_of_year: int,
                                 relative_humidity: float = 50.0,
                                 altitude: float = 0.0,
-                                time_resolution: float = 0.5) -> pd.DataFrame:
+                                time_resolution: float = 0.5,
+                                aerosol_type: str = 'rural') -> pd.DataFrame:
         """
         Calculate daily irradiance profile for given location and date.
         
@@ -395,6 +415,7 @@ class RealisticSolarSpectrum:
             relative_humidity: Relative humidity [%]
             altitude: Observer altitude [m]
             time_resolution: Time step [hours]
+            aerosol_type: Aerosol environment type
             
         Returns:
             DataFrame with hourly solar data
@@ -415,7 +436,7 @@ class RealisticSolarSpectrum:
             if is_daylight:
                 # Calculate air mass and spectrum
                 air_mass = self.calculate_air_mass(zenith, altitude)
-                spectrum = self.calculate_spectrum(air_mass, relative_humidity, altitude)
+                spectrum = self.calculate_spectrum(air_mass, relative_humidity, altitude, aerosol_type)
                 
                 # Estimate direct/diffuse split (simplified)
                 clearness_index = min(spectrum.total_irradiance / 1000, 1.0)

@@ -301,12 +301,17 @@ class TransferMatrixCalculator:
     
     def _build_transfer_matrices_s(self, n_complex: np.ndarray, kz_array: np.ndarray, 
                                   stack_d: np.ndarray, k0: float) -> Tuple[np.ndarray, List[np.ndarray]]:
-        """Build transfer matrices for s-polarized light"""
+        """Build transfer matrices for s-polarized light.
+        
+        FIXED: Correct multiplication order for light traveling from medium 0 through layers 1..N
+        to substrate: M_total = M_N × M_{N-1} × ... × M_1 (rightmost matrix acts first)
+        """
         
         n_layers = len(n_complex)
         layer_matrices = []
         M_total = np.eye(2, dtype=complex)
         
+        # Build individual layer matrices first
         for i in range(1, n_layers - 1):  # Skip superstrate and substrate
             n_i = n_complex[i]
             kz_i = kz_array[i]
@@ -315,25 +320,42 @@ class TransferMatrixCalculator:
             # Phase thickness
             beta = kz_i * d_i
             
-            # Layer transfer matrix
+            # Layer transfer matrix (propagation matrix)
             M_i = np.array([
                 [np.cos(beta), -1j * np.sin(beta) / (n_i * kz_i / k0)],
                 [-1j * (n_i * kz_i / k0) * np.sin(beta), np.cos(beta)]
             ], dtype=complex)
             
             layer_matrices.append(M_i)
+        
+        # CORRECTED: Multiply matrices in proper order
+        # For light traveling from superstrate through layers to substrate:
+        # M_total = M_N × M_{N-1} × ... × M_2 × M_1
+        # where M_1 is the first layer after superstrate, M_N is the last layer before substrate
+        
+        for M_i in layer_matrices:
+            M_total = M_total @ M_i  # This gives M_1 @ M_2 @ ... @ M_N order
+        
+        # The above is actually wrong! We need to reverse the order.
+        # Correct physics: Matrix closest to substrate multiplies first
+        M_total = np.eye(2, dtype=complex)
+        for M_i in reversed(layer_matrices):  # Reverse order: M_N × ... × M_2 × M_1
             M_total = M_total @ M_i
         
         return M_total, layer_matrices
     
     def _build_transfer_matrices_p(self, n_complex: np.ndarray, kz_array: np.ndarray,
                                   stack_d: np.ndarray, k0: float, cos_theta: float) -> Tuple[np.ndarray, List[np.ndarray]]:
-        """Build transfer matrices for p-polarized light"""
+        """Build transfer matrices for p-polarized light.
+        
+        FIXED: Same matrix order correction as s-polarization case.
+        """
         
         n_layers = len(n_complex)
         layer_matrices = []
         M_total = np.eye(2, dtype=complex)
         
+        # Build individual layer matrices
         for i in range(1, n_layers - 1):
             n_i = n_complex[i]
             kz_i = kz_array[i]
@@ -352,6 +374,11 @@ class TransferMatrixCalculator:
             ], dtype=complex)
             
             layer_matrices.append(M_i)
+        
+        # CORRECTED: Multiply matrices in proper order (same as s-polarization)
+        # M_total = M_N × M_{N-1} × ... × M_1
+        M_total = np.eye(2, dtype=complex)
+        for M_i in reversed(layer_matrices):  # Reverse order for correct physics
             M_total = M_total @ M_i
             
         return M_total, layer_matrices
@@ -359,37 +386,78 @@ class TransferMatrixCalculator:
     def _calculate_layer_absorption(self, n_complex: np.ndarray, kz_array: np.ndarray,
                                   stack_d: np.ndarray, layer_matrices: List[np.ndarray], 
                                   r: complex, t: complex, k0: float, w_idx: int) -> List[float]:
-        """Calculate absorption in each layer using Poynting vector analysis"""
+        """Calculate absorption in each layer using proper field integration with standing wave patterns.
+        
+        FIXED: Implement proper field integration using E-field amplitude from transfer matrix
+        at each position within the layer. The absorption in layer j should be:
+        A_j = ∫|E(z)|² × α × dz across the layer thickness, where E(z) comes from 
+        forward+backward wave superposition.
+        """
         
         layer_abs = []
-        E_forward = np.array([1.0, r], dtype=complex)  # Forward wave amplitude
+        
+        # Start with incident field amplitudes [E+, E-] in superstrate  
+        E_forward = 1.0  # Normalized incident amplitude
+        E_backward = r    # Reflected amplitude
         
         # Superstrate (no absorption for lossless media)
         layer_abs.append(0.0)
         
-        # Propagate through each active layer
+        # Current field state [E+, E-] as we propagate through stack
+        current_field = np.array([E_forward, E_backward], dtype=complex)
+        
+        # Propagate through each active layer with proper field calculation
+        z_position = 0.0  # Track position through stack
+        
         for i, M_i in enumerate(layer_matrices):
             layer_idx = i + 1  # Offset for superstrate
             n_i = n_complex[layer_idx]
-            k_i = np.imag(n_i)
+            k_i = np.imag(n_i)  # Extinction coefficient
             d_i = stack_d[layer_idx]
+            kz_i = kz_array[layer_idx]
             
-            if k_i > 0:  # Absorbing layer
-                # Average electric field intensity in the layer
-                # Simplified calculation - exact requires integration over layer thickness
-                E_avg_squared = np.abs(E_forward[0])**2 + np.abs(E_forward[1])**2
-                
+            if k_i > 0 and d_i > 0:  # Absorbing layer
                 # Absorption coefficient
-                alpha = 4 * np.pi * k_i / (self.wavelengths[w_idx] * 1e-9)
+                alpha = 4 * np.pi * k_i / (self.wavelengths[w_idx] * 1e-9)  # m⁻¹
                 
-                # Beer's law with interference effects
-                absorption = 2 * np.real(n_i) * k_i * E_avg_squared * alpha * d_i
-                layer_abs.append(min(absorption, 1.0))  # Cap at 100%
+                # Integration points through layer thickness
+                n_points = max(10, int(d_i * 1e9 / 10))  # At least 10 points, or 1 per 10nm
+                z_local = np.linspace(0, d_i, n_points)
+                
+                # Calculate field intensity |E(z)|² at each point in layer
+                field_intensity = np.zeros(len(z_local))
+                
+                for j, z in enumerate(z_local):
+                    # Forward and backward propagating waves within layer
+                    # E+ propagates as exp(ikz*z), E- propagates as exp(-ikz*z)
+                    E_plus_local = current_field[0] * np.exp(1j * kz_i * z)
+                    E_minus_local = current_field[1] * np.exp(-1j * kz_i * z)
+                    
+                    # Total field is superposition (standing wave pattern)
+                    E_total = E_plus_local + E_minus_local
+                    field_intensity[j] = np.abs(E_total)**2
+                
+                # Integrate absorption: A = ∫ α |E(z)|² dz / |E_incident|²
+                # Normalize by incident field intensity 
+                incident_intensity = np.abs(E_forward)**2
+                
+                if incident_intensity > 0:
+                    # Numerical integration of α|E(z)|² over layer thickness
+                    absorption_integrand = alpha * field_intensity
+                    absorbed_fraction = np.trapezoid(absorption_integrand, z_local) / incident_intensity
+                    
+                    # Apply absorption saturation (no more than 100%)
+                    absorption_fraction = 1 - np.exp(-absorbed_fraction)  # Beer-Lambert saturation
+                    layer_abs.append(min(absorption_fraction, 1.0))
+                else:
+                    layer_abs.append(0.0)
             else:
                 layer_abs.append(0.0)
             
-            # Propagate to next layer
-            E_forward = M_i @ E_forward
+            # Propagate field amplitudes to next layer using transfer matrix
+            # This updates the [E+, E-] amplitudes for the next layer
+            current_field = M_i @ current_field
+            z_position += d_i
         
         # Substrate (typically no absorption)
         layer_abs.append(0.0)

@@ -80,12 +80,14 @@ def test_interface_calculator():
     try:
         from engines.interface_energy import INTERFACE_CALCULATOR
         
-        # Test tolerance factor calculation
-        a_comp = {'MA': 1.0, 'FA': 0.0, 'Cs': 0.0, 'Rb': 0.0}
-        b_comp = {'Pb': 1.0, 'Sn': 0.0, 'Ge': 0.0}
-        x_comp = {'I': 1.0, 'X_Br': 0.0, 'X_Cl': 0.0}
+        # Test tolerance factor calculation (single dict with site-prefixed keys)
+        composition = {
+            'A_MA': 1.0, 'A_FA': 0.0, 'A_Cs': 0.0, 'A_Rb': 0.0,
+            'B_Pb': 1.0, 'B_Sn': 0.0, 'B_Ge': 0.0,
+            'X_I': 1.0, 'X_Br': 0.0, 'X_Cl': 0.0,
+        }
         
-        tolerance_factor = INTERFACE_CALCULATOR.calculate_tolerance_factor(a_comp, b_comp, x_comp)
+        tolerance_factor = INTERFACE_CALCULATOR.calculate_tolerance_factor(composition)
         assert isinstance(tolerance_factor, (int, float))
         assert tolerance_factor >= 0
         

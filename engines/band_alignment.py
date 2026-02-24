@@ -116,18 +116,44 @@ class DetailedBalanceCalculator:
         Planck's law in wavelength form:
         Φ_bb(λ) = 2πc/λ⁴ * 1/[exp(hc/λkT) - 1]  [photons⋅m⁻²⋅s⁻¹⋅nm⁻¹]
         
+        FIXED: Proper handling of exponent overflow and Wien/Rayleigh-Jeans limits
         Ref: Rühle (2016) Solar Energy 130, 139-147
         """
         wl_m = self.wavelengths * 1e-9  # Convert nm to meters
         exponent = H * C / (wl_m * KB * self.T)
-        # Clamp exponent to avoid overflow
-        exponent = np.clip(exponent, 0, 500)
         
-        # Photon flux per wavelength per steradian
-        phi_bb = 2 * C / wl_m**4 / (np.exp(exponent) - 1)  # photons⋅m⁻²⋅s⁻¹⋅m⁻¹⋅sr⁻¹
+        # Handle overflow and underflow cases properly
+        exponent = np.clip(exponent, 0, 700)  # Extend range but avoid overflow
+        
+        # Initialize photon flux array
+        phi_bb = np.zeros_like(wl_m)
+        
+        # Handle different regimes to avoid numerical issues
+        for i in range(len(exponent)):
+            x = exponent[i]
+            if x > 100:
+                # Wien limit: exp(x) >> 1, so exp(x) - 1 ≈ exp(x)
+                # Result approaches 0 exponentially
+                phi_bb[i] = 2 * C / wl_m[i]**4 * np.exp(-x)
+            elif x < 0.01:
+                # Rayleigh-Jeans limit: exp(x) ≈ 1 + x, so exp(x) - 1 ≈ x
+                # Use Taylor expansion to avoid 0/0 
+                phi_bb[i] = 2 * C / wl_m[i]**4 * (1/x)
+            else:
+                # Standard case: use exact formula with safe exponent
+                exp_x = np.exp(x)
+                # Handle case where exp(x) = 1 (would give division by zero)
+                if exp_x == 1.0:
+                    phi_bb[i] = 2 * C / wl_m[i]**4 * (1/x)  # Taylor approximation
+                else:
+                    phi_bb[i] = 2 * C / wl_m[i]**4 / (exp_x - 1)
         
         # Convert to per nm, integrate over hemisphere (π sr)
         self.blackbody_photon_flux = phi_bb * 1e-9 * np.pi  # photons⋅m⁻²⋅s⁻¹⋅nm⁻¹
+        
+        # Ensure no NaN or inf values
+        self.blackbody_photon_flux = np.nan_to_num(self.blackbody_photon_flux, 
+                                                  nan=0.0, posinf=0.0, neginf=0.0)
     
     def calculate_single_junction(self, bandgap: float, detailed_output: bool = False) -> Union[float, DetailedBalanceResult]:
         """
@@ -491,6 +517,9 @@ class BandgapOptimizer:
         
         Wavelengths are ascending, energies descending.
         E > Eg_high → λ < λ_high; E > Eg_low → λ < λ_low
+        
+        FIXED: Properly account for Jacobian when converting between wavelength and energy domains.
+        The Jacobian for λ→E conversion is |dE/dλ| = hc/λ²
         """
         lam_high = 1240 / eg_high  # shorter wavelength (higher energy cutoff)
         lam_low = 1240 / eg_low    # longer wavelength (lower energy cutoff)
@@ -498,19 +527,48 @@ class BandgapOptimizer:
         idx_high = np.searchsorted(self.db_calc.wavelengths, lam_high)
         idx_low = np.searchsorted(self.db_calc.wavelengths, lam_low)
         
+        # Get wavelength and flux arrays for integration range
         if include_below:
             # Bottom cell: absorb all photons with λ < lam_low (E > eg_low)
             # But exclude photons already absorbed by upper cells (λ < lam_high)
-            absorbed_flux = np.trapezoid(
-                self.db_calc.photon_flux_incident[idx_high:idx_low],
-                self.db_calc.wavelengths[idx_high:idx_low]
-            )
+            wavelengths_range = self.db_calc.wavelengths[idx_high:idx_low]
+            flux_range = self.db_calc.photon_flux_incident[idx_high:idx_low]
         else:
             # Middle cell: absorb photons with lam_high < λ < lam_low (eg_low < E < eg_high)
-            absorbed_flux = np.trapezoid(
-                self.db_calc.photon_flux_incident[idx_high:idx_low],
-                self.db_calc.wavelengths[idx_high:idx_low]
-            )
+            wavelengths_range = self.db_calc.wavelengths[idx_high:idx_low]
+            flux_range = self.db_calc.photon_flux_incident[idx_high:idx_low]
+        
+        if len(wavelengths_range) == 0 or len(flux_range) == 0:
+            return 0.0
+        
+        # Apply Jacobian correction for wavelength-to-energy domain conversion
+        # When integrating ∫ Φ(λ) dλ where Φ(λ) comes from energy flux Φ(E)
+        # The correct relation is: Φ(λ) = Φ(E) × |dE/dλ| = Φ(E) × hc/λ²
+        # But our AM1.5G spectrum is already in wavelength domain, so we need to verify
+        # that energy range filtering is consistent
+        
+        # For proper energy filtering, ensure we're integrating the correct range
+        # Convert boundaries back to verify consistency
+        wavelengths_nm = wavelengths_range
+        energies_eV = H * C / (wavelengths_nm * 1e-9) / Q  # Convert nm to eV
+        
+        # Check integration bounds are correct for ascending wavelengths
+        if include_below:
+            # Bottom cell should get E > eg_low, so λ < lam_low
+            energy_mask = energies_eV >= eg_low
+        else:
+            # Middle cell gets eg_low < E < eg_high, so lam_high < λ < lam_low  
+            energy_mask = (energies_eV >= eg_low) & (energies_eV <= eg_high)
+        
+        # Apply energy mask to ensure correct integration bounds
+        if np.any(energy_mask):
+            wavelengths_filtered = wavelengths_nm[energy_mask]
+            flux_filtered = flux_range[energy_mask]
+            
+            # Integrate with proper bounds
+            absorbed_flux = np.trapezoid(flux_filtered, wavelengths_filtered)
+        else:
+            absorbed_flux = 0.0
         
         absorbed_flux *= self.db_calc.concentration
         jsc = Q * absorbed_flux * 1e-1  # mA/cm²

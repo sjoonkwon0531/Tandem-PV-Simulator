@@ -220,28 +220,90 @@ class InterfaceEnergyCalculator:
     
     def calculate_strain_energy(self, layer1: LayerProperties, layer2: LayerProperties) -> float:
         """
-        Calculate elastic strain energy at interface.
+        Calculate elastic strain energy at interface using proper biaxial strain theory.
         
-        E_strain = Y × (Δa/a)² × h
-        where Y is biaxial modulus, Δa/a is lattice mismatch, h is layer thickness
+        FIXED: Use proper biaxial strain energy: U = 2μ(1+ν)/(1-ν) × ε² × t
+        where μ = shear modulus, ν = Poisson ratio, ε = lattice mismatch strain, t = film thickness.
+        Include both elastic strain and misfit dislocation energy above critical thickness 
+        (Matthews-Blakeslee criterion).
         """
         
-        # Lattice mismatch
+        # Lattice mismatch strain
         a1 = layer1.lattice_parameter
         a2 = layer2.lattice_parameter
-        mismatch = abs(a1 - a2) / max(a1, a2)
+        mismatch_strain = abs(a1 - a2) / max(a1, a2)  # ε = Δa/a
         
-        # Effective elastic modulus (geometric mean)
-        Y_eff = np.sqrt(layer1.elastic_modulus * layer2.elastic_modulus)
+        if mismatch_strain == 0:
+            return 0.0
         
-        # Strain energy density [meV/atom]
-        # Convert from mechanical units: 1 GPa = 6.24 meV/Ų
-        strain_energy_density = Y_eff * mismatch**2 * 6.24  # meV/atom
+        # Material properties - convert Young's modulus to shear modulus
+        # G = E / (2(1 + ν)) where G is shear modulus, E is Young's modulus
+        poisson1 = 0.25  # Default Poisson ratio for perovskites
+        poisson2 = 0.25  
+        shear_modulus1 = layer1.elastic_modulus / (2 * (1 + poisson1))  # Pa
+        shear_modulus2 = layer2.elastic_modulus / (2 * (1 + poisson2))  # Pa
         
-        # Scale by thinner layer thickness
-        effective_thickness = min(layer1.thickness, layer2.thickness)
+        # Use properties of the strained layer (typically the thinner one)
+        if layer1.thickness <= layer2.thickness:
+            # Layer1 is strained to match layer2
+            mu = shear_modulus1
+            nu = poisson1
+            t = layer1.thickness
+            strained_layer = layer1
+        else:
+            # Layer2 is strained to match layer1
+            mu = shear_modulus2
+            nu = poisson2
+            t = layer2.thickness
+            strained_layer = layer2
         
-        return strain_energy_density * effective_thickness / 10  # Scale to reasonable values
+        # Critical thickness for misfit dislocation formation (Matthews-Blakeslee)
+        # h_c = (b/8π) × (1-ν cos²α)/(1+ν) × ln(h_c/b) × (1/ε)
+        # Simplified approximation: h_c ≈ b/(8πε) where b is Burgers vector
+        burgers_vector = a1 * 1e-10 / np.sqrt(2)  # Approximate: b ≈ a/√2 for <110> dislocations
+        if mismatch_strain > 1e-6:
+            critical_thickness = burgers_vector / (8 * np.pi * mismatch_strain)
+        else:
+            critical_thickness = 1e-3  # Very thick for small strain
+        
+        if t <= critical_thickness:
+            # Below critical thickness: coherent strain (no dislocations)
+            # Biaxial strain energy density: U = 2μ(1+ν)/(1-ν) × ε²
+            biaxial_factor = 2 * mu * (1 + nu) / (1 - nu)  # Pa
+            strain_energy_density = biaxial_factor * mismatch_strain**2  # J/m³
+            
+            # Total strain energy per unit area
+            strain_energy_per_area = strain_energy_density * t  # J/m²
+            
+        else:
+            # Above critical thickness: partial relaxation via dislocations
+            # Residual strain after dislocation formation
+            residual_strain = mismatch_strain * (critical_thickness / t)**0.5  # Empirical scaling
+            
+            # Elastic energy from residual strain
+            biaxial_factor = 2 * mu * (1 + nu) / (1 - nu)
+            elastic_energy_density = biaxial_factor * residual_strain**2
+            elastic_energy = elastic_energy_density * t
+            
+            # Dislocation formation energy (line energy per unit length)
+            # E_dislocation ≈ μb²/4π × ln(h/b) per unit length
+            dislocation_spacing = burgers_vector / mismatch_strain  # Approximate spacing
+            dislocation_line_energy = mu * burgers_vector**2 / (4 * np.pi) * np.log(t / burgers_vector)
+            dislocation_energy_per_area = dislocation_line_energy / dislocation_spacing
+            
+            # Total energy is elastic + dislocation
+            strain_energy_per_area = elastic_energy + dislocation_energy_per_area
+        
+        # Convert to more convenient units [meV/atom]
+        # 1 J/m² ≈ 6.24e12 meV/Ų ≈ 62.4 meV/Ų for typical atomic densities
+        # Approximate atomic density: ~1e15 atoms/cm² for perovskites
+        atoms_per_m2 = 1e19  # atoms/m² (rough estimate)
+        if atoms_per_m2 > 0:
+            strain_energy_meV_per_atom = strain_energy_per_area / (Q * 1e-3) * 1000 / atoms_per_m2
+        else:
+            strain_energy_meV_per_atom = 0.0
+        
+        return strain_energy_meV_per_atom
     
     def calculate_adhesion_energy(self, layer1: LayerProperties, layer2: LayerProperties) -> float:
         """
