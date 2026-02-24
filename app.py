@@ -766,8 +766,8 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                         props = layer.get('properties', {})
                         layer_df.append({
                             'Layer': layer.get('name', layer.get('material', 'Unknown')),
-                            'Type': layer['type'],
-                            'Thickness [nm]': layer['thickness_nm'],
+                            'Type': layer.get('type', 'Contact'),
+                            'Thickness [nm]': layer.get('thickness_nm', 0),
                             'Bandgap [eV]': props.get('eg', 'N/A'),
                             'Phase': 'Contact',
                             'Stability': f"{props.get('stability', 3)}/3",
