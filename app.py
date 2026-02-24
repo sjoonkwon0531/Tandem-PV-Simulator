@@ -638,6 +638,71 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
         st.header("🧪 ABX₃ 조성 설계")
         
         if track_code == 'B':
+            # === N-Junction Optimal Composition Map ===
+            st.subheader(f"🏗️ {n_junctions}-Junction 최적 조성 맵")
+            
+            # Get optimal bandgaps from pareto fronts
+            pareto_key = f"B_{n_junctions}T"
+            if pareto_key in pareto_fronts:
+                opt_bgs = pareto_fronts[pareto_key][0]['bandgaps']
+            else:
+                opt_bgs = list(np.linspace(2.4, 1.1, n_junctions))
+            
+            st.write(f"**SQ 이론 기반 최적 밴드갭**: {' → '.join([f'{bg:.2f} eV' for bg in opt_bgs])}")
+            
+            # Find best composition for each layer
+            layer_data = []
+            for i, target_eg in enumerate(opt_bgs):
+                best = find_best_composition(target_eg, perovskite_db)
+                
+                # Build composition formula
+                a_parts = [f"{'MA' if k=='A_MA' else 'FA' if k=='A_FA' else 'Cs'}{best[k]:.0%}" 
+                           for k in ['A_MA','A_FA','A_Cs'] if best.get(k, 0) > 0.05]
+                b_parts = [f"{'Pb' if k=='B_Pb' else 'Sn'}{best[k]:.0%}" 
+                           for k in ['B_Pb','B_Sn'] if best.get(k, 0) > 0.05]
+                x_parts = [f"{'I' if k=='X_I' else 'Br' if k=='X_Br' else 'Cl'}{best[k]:.0%}" 
+                           for k in ['X_I','X_Br','X_Cl'] if best.get(k, 0) > 0.05]
+                formula = f"({'/'.join(a_parts)})({'/'.join(b_parts)})({'/'.join(x_parts)})₃"
+                
+                # Confidence badge
+                conf = best.get('confidence', 1)
+                badge = '★★★' if conf >= 3 else '★★' if conf >= 2 else '★'
+                
+                layer_data.append({
+                    'Layer': f"Layer {i+1} ({'Top' if i==0 else 'Bottom' if i==n_junctions-1 else 'Mid'})",
+                    'Target Eg [eV]': f"{target_eg:.2f}",
+                    'Matched Eg [eV]': f"{best['Eg']:.3f}",
+                    'ABX₃ 조성': formula,
+                    '안정성': f"{best.get('stability_score', 0):.1f}/10",
+                    '신뢰도': badge,
+                    '결정상': best.get('crystal_phase', 'N/A'),
+                })
+            
+            st.dataframe(pd.DataFrame(layer_data), use_container_width=True, hide_index=True)
+            
+            # Bandgap cascade bar chart
+            fig_cascade = go.Figure()
+            matched_egs = [float(d['Matched Eg [eV]']) for d in layer_data]
+            fig_cascade.add_trace(go.Bar(
+                x=[d['Layer'] for d in layer_data],
+                y=matched_egs,
+                marker_color=[f'hsl({240 - i*40}, 70%, 55%)' for i in range(n_junctions)],
+                text=[d['ABX₃ 조성'] for d in layer_data],
+                textposition='outside',
+                textfont=dict(size=9),
+            ))
+            fig_cascade.update_layout(
+                title=f"{n_junctions}-Junction 밴드갭 캐스케이드",
+                yaxis_title="Bandgap [eV]",
+                template='plotly_white',
+                height=400,
+                yaxis_range=[0, max(matched_egs) * 1.3],
+            )
+            st.plotly_chart(fig_cascade, use_container_width=True)
+            
+            st.divider()
+            
+            # === Single Target Bandgap Search (existing) ===
             st.subheader("🎯 Target Bandgap → Composition")
             
             target_eg = st.slider("목표 밴드갭 [eV]", 1.0, 3.0, 1.6, 0.05)
@@ -732,6 +797,330 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                             
             else:
                 st.warning("⚠️ No stable compositions found near target bandgap")
+            
+            # =============================================================================
+            # 🔺 삼각 상태도 (TERNARY PHASE DIAGRAMS)
+            # =============================================================================
+            
+            st.subheader("🔺 삼각 상태도 (Ternary Phase Diagrams)")
+            st.markdown("*Explore bandgap landscape across composition space*")
+            
+            # Check if B_Ge column exists in the database
+            has_ge = 'B_Ge' in perovskite_db.columns and (perovskite_db['B_Ge'] > 0).any()
+            
+            # Sidebar controls for filtering
+            with st.sidebar.expander("🔺 Ternary Plot Controls"):
+                st.markdown("**Fixed site compositions:**")
+                
+                # X-site ternary controls
+                st.markdown("*X-site ternary (I-Br-Cl):*")
+                fixed_a_for_x = st.selectbox("Fixed A-site", ["FA", "MA", "Cs"], index=0, key="x_fixed_a")
+                fixed_b_for_x = st.selectbox("Fixed B-site", ["Pb", "Sn"], index=0, key="x_fixed_b")
+                
+                # A-site ternary controls  
+                st.markdown("*A-site ternary (MA-FA-Cs):*")
+                fixed_b_for_a = st.selectbox("Fixed B-site", ["Pb", "Sn"], index=0, key="a_fixed_b")
+                fixed_x_for_a = st.selectbox("Fixed X-site", ["I", "Br", "Cl"], index=0, key="a_fixed_x")
+                
+                # B-site ternary controls
+                st.markdown("*B-site ternary:*")
+                fixed_a_for_b = st.selectbox("Fixed A-site", ["FA", "MA", "Cs"], index=0, key="b_fixed_a") 
+                fixed_x_for_b = st.selectbox("Fixed X-site", ["I", "Br", "Cl"], index=0, key="b_fixed_x")
+                
+                # Plotting controls
+                max_points = st.slider("Max points per plot", 500, 3000, 1500)
+                colorscale = st.selectbox("Colorscale", ["RdYlBu_r", "Viridis", "Plasma"], index=0)
+            
+            # Helper function to filter and prepare ternary data
+            def prepare_ternary_data(df, site_type, fixed_conditions, tolerance=0.1):
+                """Filter database and prepare ternary plot data"""
+                
+                # Apply fixed site conditions
+                filtered_df = df.copy()
+                for col, target_val in fixed_conditions.items():
+                    if col in filtered_df.columns:
+                        filtered_df = filtered_df[abs(filtered_df[col] - target_val) <= tolerance]
+                
+                # Remove rows where the varying components sum to less than 0.8 (incomplete)
+                if site_type == 'X':
+                    valid_mask = (filtered_df['X_I'] + filtered_df['X_Br'] + filtered_df['X_Cl']) >= 0.8
+                    filtered_df = filtered_df[valid_mask]
+                elif site_type == 'A':
+                    valid_mask = (filtered_df['A_MA'] + filtered_df['A_FA'] + filtered_df['A_Cs']) >= 0.8
+                    filtered_df = filtered_df[valid_mask]
+                elif site_type == 'B':
+                    if has_ge:
+                        valid_mask = (filtered_df['B_Pb'] + filtered_df['B_Sn'] + filtered_df['B_Ge']) >= 0.8
+                    else:
+                        valid_mask = (filtered_df['B_Pb'] + filtered_df['B_Sn']) >= 0.8
+                    filtered_df = filtered_df[valid_mask]
+                
+                # Sample if too many points
+                if len(filtered_df) > max_points:
+                    filtered_df = filtered_df.sample(n=max_points, random_state=42)
+                
+                return filtered_df
+            
+            # Create the three ternary plots
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # 1. X-site ternary (I-Br-Cl)
+                st.markdown("**🟦 X-site: I - Br - Cl**")
+                
+                # Define fixed conditions
+                fixed_a_val = 1.0 if fixed_a_for_x == "FA" else 0.0
+                fixed_b_val = 1.0 if fixed_b_for_x == "Pb" else 0.0
+                
+                x_conditions = {
+                    f'A_{fixed_a_for_x}': fixed_a_val,
+                    f'B_{fixed_b_for_x}': fixed_b_val
+                }
+                
+                x_data = prepare_ternary_data(perovskite_db, 'X', x_conditions)
+                
+                if len(x_data) > 0:
+                    # Create hover text
+                    hover_text = [
+                        f"I:{row['X_I']:.1%}, Br:{row['X_Br']:.1%}, Cl:{row['X_Cl']:.1%}<br>" +
+                        f"Eg: {row['Eg']:.3f} eV<br>" +
+                        f"Stability: {row['stability_score']:.1f}/10<br>" +
+                        f"Phase: {row['crystal_phase']}"
+                        for _, row in x_data.iterrows()
+                    ]
+                    
+                    # Map stability to marker symbols
+                    symbols = ['circle' if stable else 'x' for stable in x_data['phase_stable_RT']]
+                    
+                    fig_x = go.Figure(go.Scatterternary(
+                        a=x_data['X_I'],
+                        b=x_data['X_Br'], 
+                        c=x_data['X_Cl'],
+                        mode='markers',
+                        marker=dict(
+                            color=x_data['Eg'],
+                            colorscale=colorscale,
+                            colorbar=dict(title='Eg [eV]', x=1.1),
+                            size=6,
+                            symbol=symbols,
+                            line=dict(color='black', width=0.5)
+                        ),
+                        text=hover_text,
+                        hovertemplate='%{text}<extra></extra>',
+                        name=f"Fixed: {fixed_a_for_x}100%/{fixed_b_for_x}100%"
+                    ))
+                    
+                    fig_x.update_layout(
+                        ternary=dict(
+                            aaxis=dict(title='I [%]'),
+                            baxis=dict(title='Br [%]'),
+                            caxis=dict(title='Cl [%]'),
+                        ),
+                        title=f'X-site Ternary: {fixed_a_for_x}/{fixed_b_for_x} Fixed<br><sub>● stable, × unstable</sub>',
+                        height=400,
+                        template='plotly_white'
+                    )
+                    
+                    st.plotly_chart(fig_x, use_container_width=True)
+                    st.caption(f"Showing {len(x_data)} compositions")
+                else:
+                    st.warning(f"No data found for {fixed_a_for_x}/{fixed_b_for_x} combination")
+                
+                # 2. A-site ternary (MA-FA-Cs)  
+                st.markdown("**🟩 A-site: MA - FA - Cs**")
+                
+                fixed_b_val_a = 1.0 if fixed_b_for_a == "Pb" else 0.0
+                fixed_x_val_a = 1.0 if fixed_x_for_a == "I" else 0.0 if fixed_x_for_a == "Br" else 0.0
+                
+                a_conditions = {
+                    f'B_{fixed_b_for_a}': fixed_b_val_a,
+                    f'X_{fixed_x_for_a}': fixed_x_val_a
+                }
+                
+                a_data = prepare_ternary_data(perovskite_db, 'A', a_conditions)
+                
+                if len(a_data) > 0:
+                    hover_text_a = [
+                        f"MA:{row['A_MA']:.1%}, FA:{row['A_FA']:.1%}, Cs:{row['A_Cs']:.1%}<br>" +
+                        f"Eg: {row['Eg']:.3f} eV<br>" +
+                        f"Stability: {row['stability_score']:.1f}/10<br>" +
+                        f"Phase: {row['crystal_phase']}"
+                        for _, row in a_data.iterrows()
+                    ]
+                    
+                    symbols_a = ['circle' if stable else 'x' for stable in a_data['phase_stable_RT']]
+                    
+                    fig_a = go.Figure(go.Scatterternary(
+                        a=a_data['A_MA'],
+                        b=a_data['A_FA'],
+                        c=a_data['A_Cs'], 
+                        mode='markers',
+                        marker=dict(
+                            color=a_data['Eg'],
+                            colorscale=colorscale,
+                            colorbar=dict(title='Eg [eV]', x=1.1),
+                            size=6,
+                            symbol=symbols_a,
+                            line=dict(color='black', width=0.5)
+                        ),
+                        text=hover_text_a,
+                        hovertemplate='%{text}<extra></extra>',
+                        name=f"Fixed: {fixed_b_for_a}100%/{fixed_x_for_a}100%"
+                    ))
+                    
+                    fig_a.update_layout(
+                        ternary=dict(
+                            aaxis=dict(title='MA [%]'),
+                            baxis=dict(title='FA [%]'), 
+                            caxis=dict(title='Cs [%]'),
+                        ),
+                        title=f'A-site Ternary: {fixed_b_for_a}/{fixed_x_for_a} Fixed<br><sub>● stable, × unstable</sub>',
+                        height=400,
+                        template='plotly_white'
+                    )
+                    
+                    st.plotly_chart(fig_a, use_container_width=True)
+                    st.caption(f"Showing {len(a_data)} compositions")
+                else:
+                    st.warning(f"No data found for {fixed_b_for_a}/{fixed_x_for_a} combination")
+            
+            with col2:
+                # 3. B-site ternary (Pb-Sn-Ge or Pb-Sn binary)
+                if has_ge:
+                    st.markdown("**🟪 B-site: Pb - Sn - Ge**")
+                    
+                    fixed_a_val_b = 1.0 if fixed_a_for_b == "FA" else 0.0 if fixed_a_for_b == "MA" else 0.0
+                    fixed_x_val_b = 1.0 if fixed_x_for_b == "I" else 0.0 if fixed_x_for_b == "Br" else 0.0
+                    
+                    b_conditions = {
+                        f'A_{fixed_a_for_b}': fixed_a_val_b,
+                        f'X_{fixed_x_for_b}': fixed_x_val_b
+                    }
+                    
+                    b_data = prepare_ternary_data(perovskite_db, 'B', b_conditions)
+                    
+                    if len(b_data) > 0:
+                        hover_text_b = [
+                            f"Pb:{row['B_Pb']:.1%}, Sn:{row['B_Sn']:.1%}, Ge:{row['B_Ge']:.1%}<br>" +
+                            f"Eg: {row['Eg']:.3f} eV<br>" +
+                            f"Stability: {row['stability_score']:.1f}/10<br>" +
+                            f"Phase: {row['crystal_phase']}"
+                            for _, row in b_data.iterrows()
+                        ]
+                        
+                        symbols_b = ['circle' if stable else 'x' for stable in b_data['phase_stable_RT']]
+                        
+                        fig_b = go.Figure(go.Scatterternary(
+                            a=b_data['B_Pb'],
+                            b=b_data['B_Sn'],
+                            c=b_data['B_Ge'],
+                            mode='markers',
+                            marker=dict(
+                                color=b_data['Eg'],
+                                colorscale=colorscale,
+                                colorbar=dict(title='Eg [eV]', x=1.1),
+                                size=6,
+                                symbol=symbols_b,
+                                line=dict(color='black', width=0.5)
+                            ),
+                            text=hover_text_b,
+                            hovertemplate='%{text}<extra></extra>',
+                            name=f"Fixed: {fixed_a_for_b}100%/{fixed_x_for_b}100%"
+                        ))
+                        
+                        fig_b.update_layout(
+                            ternary=dict(
+                                aaxis=dict(title='Pb [%]'),
+                                baxis=dict(title='Sn [%]'),
+                                caxis=dict(title='Ge [%]'),
+                            ),
+                            title=f'B-site Ternary: {fixed_a_for_b}/{fixed_x_for_b} Fixed<br><sub>● stable, × unstable</sub>',
+                            height=400,
+                            template='plotly_white'
+                        )
+                        
+                        st.plotly_chart(fig_b, use_container_width=True)
+                        st.caption(f"Showing {len(b_data)} compositions")
+                    else:
+                        st.warning(f"No Ge data found for {fixed_a_for_b}/{fixed_x_for_b} combination")
+                
+                else:
+                    # Binary Pb-Sn plot as backup
+                    st.markdown("**🟪 B-site: Pb - Sn (Binary)**")
+                    st.info("ℹ️ Ge data not available in database")
+                    
+                    fixed_a_val_b = 1.0 if fixed_a_for_b == "FA" else 0.0 if fixed_a_for_b == "MA" else 0.0
+                    fixed_x_val_b = 1.0 if fixed_x_for_b == "I" else 0.0 if fixed_x_for_b == "Br" else 0.0
+                    
+                    b_conditions = {
+                        f'A_{fixed_a_for_b}': fixed_a_val_b,
+                        f'X_{fixed_x_for_b}': fixed_x_val_b
+                    }
+                    
+                    # Filter for binary Pb-Sn
+                    b_data_binary = prepare_ternary_data(perovskite_db, 'B', b_conditions)
+                    b_data_binary = b_data_binary[
+                        (b_data_binary['B_Pb'] + b_data_binary['B_Sn']) >= 0.95  # Nearly pure Pb-Sn
+                    ]
+                    
+                    if len(b_data_binary) > 0:
+                        # Create scatter plot for binary case
+                        fig_b_binary = px.scatter(
+                            b_data_binary, 
+                            x='B_Pb', 
+                            y='B_Sn',
+                            color='Eg',
+                            symbol='phase_stable_RT',
+                            color_continuous_scale=colorscale,
+                            title=f'B-site Binary: {fixed_a_for_b}/{fixed_x_for_b} Fixed',
+                            labels={'B_Pb': 'Pb fraction', 'B_Sn': 'Sn fraction'},
+                            template='plotly_white',
+                            height=400
+                        )
+                        fig_b_binary.update_traces(marker=dict(size=8, line=dict(width=1, color='black')))
+                        
+                        st.plotly_chart(fig_b_binary, use_container_width=True)
+                        st.caption(f"Showing {len(b_data_binary)} Pb-Sn compositions")
+                    else:
+                        st.warning(f"No Pb-Sn data found for {fixed_a_for_b}/{fixed_x_for_b} combination")
+                
+                # Bandgap statistics table
+                st.markdown("**📊 Bandgap Statistics**")
+                stats_data = []
+                
+                if len(x_data) > 0:
+                    stats_data.append({
+                        'Site': 'X (I-Br-Cl)',
+                        'Points': len(x_data),
+                        'Eg Range [eV]': f"{x_data['Eg'].min():.2f} - {x_data['Eg'].max():.2f}",
+                        'Stable %': f"{(x_data['phase_stable_RT']).mean():.1%}"
+                    })
+                
+                if len(a_data) > 0:
+                    stats_data.append({
+                        'Site': 'A (MA-FA-Cs)', 
+                        'Points': len(a_data),
+                        'Eg Range [eV]': f"{a_data['Eg'].min():.2f} - {a_data['Eg'].max():.2f}",
+                        'Stable %': f"{(a_data['phase_stable_RT']).mean():.1%}"
+                    })
+                
+                if has_ge and len(b_data) > 0:
+                    stats_data.append({
+                        'Site': 'B (Pb-Sn-Ge)',
+                        'Points': len(b_data),
+                        'Eg Range [eV]': f"{b_data['Eg'].min():.2f} - {b_data['Eg'].max():.2f}",
+                        'Stable %': f"{(b_data['phase_stable_RT']).mean():.1%}"
+                    })
+                elif 'b_data_binary' in locals() and len(b_data_binary) > 0:
+                    stats_data.append({
+                        'Site': 'B (Pb-Sn)',
+                        'Points': len(b_data_binary),
+                        'Eg Range [eV]': f"{b_data_binary['Eg'].min():.2f} - {b_data_binary['Eg'].max():.2f}",
+                        'Stable %': f"{(b_data_binary['phase_stable_RT']).mean():.1%}"
+                    })
+                
+                if stats_data:
+                    st.dataframe(pd.DataFrame(stats_data), use_container_width=True)
                 
         else:
             st.info("📌 Track A uses established materials. See Tab 1 for available options.")
