@@ -40,9 +40,8 @@ try:
     from config import (MATERIAL_DB, A_SITE_IONS, B_SITE_IONS, X_SITE_IONS, 
                        NREL_RECORDS, get_am15g_spectrum, DEFAULT_CONFIG)
     from engines.ml_bandgap import PerovskiteBandgapPredictor
-    from engines.interface_energy import InterfaceStabilityAnalyzer
-    from engines.solar_spectrum import (calculate_solar_position, get_spectrum_at_am,
-                                       get_daily_irradiance_profile, sunrise_sunset)
+    from engines.interface_energy import InterfaceEnergyCalculator
+    from engines.solar_spectrum import RealisticSolarSpectrum
     from engines.iv_curve import simulate_subcell_iv, simulate_tandem_iv, find_mpp
     from engines.band_alignment import DetailedBalanceCalculator, BandgapOptimizer
     from engines.optical_tmm import TransferMatrixCalculator  
@@ -138,7 +137,7 @@ def init_session_state():
         st.session_state.ml_predictor.fit()
     
     if 'interface_analyzer' not in st.session_state:
-        st.session_state.interface_analyzer = InterfaceStabilityAnalyzer()
+        st.session_state.interface_analyzer = InterfaceEnergyCalculator()
     
     if 'simulation_data' not in st.session_state:
         st.session_state.simulation_data = {}
@@ -1495,7 +1494,7 @@ with tabs[4]:
                                     comp1 = {'A': {'MA': 1.0}, 'B': {'Pb': 1.0}, 'X': {'I': 1.0}}
                                     comp2 = {'A': {'MA': 0.5, 'FA': 0.5}, 'B': {'Pb': 1.0}, 'X': {'I': 0.7, 'Br': 0.3}}
                                     
-                                    interface_result = st.session_state.interface_analyzer.calculate_interface_energy(comp1, comp2)
+                                    interface_result = InterfaceEnergyCalculator().assess_interface_stability(comp1, comp2)
                                     
                                     lattice_mismatch = interface_result.get('lattice_mismatch', 0.02)
                                     cte_mismatch = interface_result.get('thermal_expansion_mismatch', 2e-6)
