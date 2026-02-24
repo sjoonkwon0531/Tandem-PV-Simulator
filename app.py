@@ -358,8 +358,9 @@ def run_stage1(track_code: str, n_junctions: int, electrode_top: str,
         'properties': etl_data
     })
     
-    # Absorber layers
+    # Absorber layers (ensure 'type' key is set for optical/display functions)
     for layer in layers:
+        layer['type'] = 'absorber'  # Normalize key name
         stack_layers.append(layer)
     
     # HTL
