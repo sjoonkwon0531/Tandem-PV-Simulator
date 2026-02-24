@@ -363,7 +363,7 @@ with tabs[0]:
             else:
                 # Multi-junction optimization (simplified)
                 # Use BandgapOptimizer for quick estimate
-                optimizer = BandgapOptimizer(track='A')
+                optimizer = BandgapOptimizer(db_calc)
                 
                 try:
                     result = optimizer.optimize_bandgaps(
@@ -825,7 +825,7 @@ with tabs[2]:
             with st.spinner("최적화 진행 중..."):
                 try:
                     # Initialize optimizer
-                    optimizer = BandgapOptimizer(track=track.split(' - ')[0])
+                    optimizer = BandgapOptimizer(db_calc)
                     
                     # Run optimization
                     result = optimizer.optimize_bandgaps(
