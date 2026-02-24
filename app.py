@@ -682,7 +682,7 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                 for layer in result['stack']:
                     thickness = layer['thickness_nm'] / 1000  # Convert to μm
                     layers_data.append({
-                        'name': layer['name'],
+                        'name': layer.get('name', layer.get('material', 'Unknown')),
                         'type': layer.get('type', 'other'),
                         'y_start': y_pos,
                         'y_end': y_pos + thickness,
@@ -714,7 +714,7 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                     # Add label
                     fig_cross.add_annotation(
                         x=0.5, y=(layer['y_start'] + layer['y_end'])/2,
-                        text=f"{layer['name']}<br>{layer['thickness']:.1f} μm",
+                        text=f"{layer.get('name', layer.get('material', 'Unknown'))}<br>{layer['thickness']:.1f} μm",
                         showarrow=False,
                         font=dict(size=10)
                     )
@@ -741,7 +741,7 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                             # Perovskite layer
                             comp = layer['composition']
                             layer_df.append({
-                                'Layer': layer.get('material', layer['name']),
+                                'Layer': layer.get('material', layer.get('name', layer.get('material', 'Unknown'))),
                                 'Type': layer['type'],
                                 'Thickness [nm]': layer['thickness_nm'],
                                 'Bandgap [eV]': comp.get('Eg', 'N/A'),
@@ -753,7 +753,7 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                             # Track A material
                             props = layer.get('properties', {})
                             layer_df.append({
-                                'Layer': layer.get('material', layer['name']),
+                                'Layer': layer.get('material', layer.get('name', layer.get('material', 'Unknown'))),
                                 'Type': layer['type'],
                                 'Thickness [nm]': layer['thickness_nm'],
                                 'Bandgap [eV]': props.get('bandgap', layer.get('bandgap', 'N/A')),
@@ -765,7 +765,7 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                         # Contact layers
                         props = layer.get('properties', {})
                         layer_df.append({
-                            'Layer': layer['name'],
+                            'Layer': layer.get('name', layer.get('material', 'Unknown')),
                             'Type': layer['type'],
                             'Thickness [nm]': layer['thickness_nm'],
                             'Bandgap [eV]': props.get('eg', 'N/A'),
