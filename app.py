@@ -384,7 +384,7 @@ def run_stage1(track_code: str, n_junctions: int, electrode_top: str,
     
     # 4. Quick optical calculation from database
     # Simplified - just estimate total absorption
-    total_thickness = sum(layer['thickness_nm'] for layer in stack_layers)
+    total_thickness = sum(layer.get('thickness_nm', 0) for layer in stack_layers)
     
     # Estimate performance metrics from database interpolation
     if track_code == 'B':
@@ -427,7 +427,7 @@ def calculate_stack_absorption_from_db(stack: List, wavelengths=None) -> np.ndar
     total_absorption = np.zeros_like(wavelengths)
     
     for layer in stack:
-        if layer['type'] == 'absorber':
+        if layer.get('type', 'other') == 'absorber':
             # Get absorption coefficient from database
             if 'composition' in layer:
                 alpha_500 = layer['composition']['absorption_coeff_500nm']
@@ -447,7 +447,7 @@ def calculate_stack_absorption_from_db(stack: List, wavelengths=None) -> np.ndar
             )
             
             # Beer-Lambert absorption
-            thickness_cm = layer['thickness_nm'] * 1e-7
+            thickness_cm = layer.get('thickness_nm', 0) * 1e-7
             layer_absorption = 1 - np.exp(-alpha * thickness_cm)
             
             total_absorption += layer_absorption * 0.9**len(stack)  # Rough interference
@@ -680,7 +680,7 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                 y_pos = 0
                 
                 for layer in result['stack']:
-                    thickness = layer['thickness_nm'] / 1000  # Convert to μm
+                    thickness = layer.get('thickness_nm', 0) / 1000  # Convert to μm
                     layers_data.append({
                         'name': layer.get('name', layer.get('material', 'Unknown')),
                         'type': layer.get('type', 'other'),
@@ -706,7 +706,7 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                         type="rect",
                         x0=0, x1=1,
                         y0=layer['y_start'], y1=layer['y_end'],
-                        fillcolor=colors.get(layer['type'], colors['other']),
+                        fillcolor=colors.get(layer.get('type', 'other'), colors['other']),
                         opacity=0.7,
                         line=dict(color="black", width=1)
                     )
@@ -742,8 +742,8 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                             comp = layer['composition']
                             layer_df.append({
                                 'Layer': layer.get('material', layer.get('name', layer.get('material', 'Unknown'))),
-                                'Type': layer['type'],
-                                'Thickness [nm]': layer['thickness_nm'],
+                                'Type': layer.get('type', 'absorber'),
+                                'Thickness [nm]': layer.get('thickness_nm', 0),
                                 'Bandgap [eV]': comp.get('Eg', 'N/A'),
                                 'Phase': comp.get('crystal_phase', 'N/A'), 
                                 'Stability': f"{comp.get('stability_score', 0):.1f}/10",
@@ -754,8 +754,8 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
                             props = layer.get('properties', {})
                             layer_df.append({
                                 'Layer': layer.get('material', layer.get('name', layer.get('material', 'Unknown'))),
-                                'Type': layer['type'],
-                                'Thickness [nm]': layer['thickness_nm'],
+                                'Type': layer.get('type', 'absorber'),
+                                'Thickness [nm]': layer.get('thickness_nm', 0),
                                 'Bandgap [eV]': props.get('bandgap', layer.get('bandgap', 'N/A')),
                                 'Phase': props.get('type', 'N/A'),
                                 'Stability': f"{props.get('stability_score', 8):.1f}/10",
