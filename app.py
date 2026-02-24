@@ -834,10 +834,11 @@ with tab5:
         # Thickness inputs
         thermal_thicknesses = []
         for mat in thermal_materials:
+            default_thick = 500 if ('perovskite' in mat.lower() or 'MAP' in mat) else 5000
             thickness = st.number_input(
                 f"{mat} 두께 [nm]", 
-                min_value=10, max_value=50000, 
-                value=500 if 'perovskite' in mat.lower() or 'MAP' in mat else 200000,
+                min_value=10, max_value=500000, 
+                value=default_thick,
                 key=f"thermal_thick_{mat}"
             )
             thermal_thicknesses.append(thickness * 1e-9)  # Convert to meters
@@ -1076,10 +1077,11 @@ with tab6:
         # Corresponding thicknesses
         stability_thicknesses = []
         for mat in stability_materials:
+            stab_default = 500 if any(x in mat for x in ['MAP', 'FA', 'Cs']) else 5000
             thick = st.number_input(
                 f"{mat} 두께 [nm]",
-                min_value=10, max_value=10000,
-                value=500 if any(x in mat for x in ['MAP', 'FA', 'Cs']) else 200000,
+                min_value=10, max_value=500000,
+                value=stab_default,
                 key=f"stab_thick_{mat}"
             )
             stability_thicknesses.append(thick * 1e-9)  # Convert to meters
