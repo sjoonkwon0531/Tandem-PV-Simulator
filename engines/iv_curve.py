@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional, Union
 from scipy.optimize import minimize_scalar, brentq
-from scipy.constants import k, q
+from scipy.constants import k, elementary_charge as q
 import warnings
 
 warnings.filterwarnings("ignore")
