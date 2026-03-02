@@ -30,6 +30,9 @@ __all__ = [
     "ion_dynamics",
     "interface_charge",
     "multiscale_control",
+    "surrogate_model",
+    "ml_controller",
+    "material_predictor",
 ]
 
 # Engine availability check
@@ -98,6 +101,24 @@ except ImportError:
 try:
     from . import multiscale_control
     AVAILABLE_ENGINES.append("multiscale_control")
+except ImportError:
+    pass
+
+try:
+    from . import surrogate_model
+    AVAILABLE_ENGINES.append("surrogate_model")
+except ImportError:
+    pass
+
+try:
+    from . import ml_controller
+    AVAILABLE_ENGINES.append("ml_controller")
+except ImportError:
+    pass
+
+try:
+    from . import material_predictor
+    AVAILABLE_ENGINES.append("material_predictor")
 except ImportError:
     pass
 

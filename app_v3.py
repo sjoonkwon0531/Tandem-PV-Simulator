@@ -477,6 +477,7 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
     
     # Always add Dynamic Control tab
     tab_list.append("🔄 Dynamic Control")
+    tab_list.append("🤖 AI/ML Control")
     
     tabs = st.tabs(tab_list)
     
@@ -1297,6 +1298,167 @@ with tabs[-1]:
         st.error(f"Dynamic Control engine error: {e}")
         import traceback
         st.code(traceback.format_exc())
+
+    # =============================================================================
+    # TAB: 🤖 AI/ML Control
+    # =============================================================================
+    ai_tab_idx = len(tab_list) - 1  # last tab
+    with tabs[ai_tab_idx]:
+        st.header("🤖 AI/ML 기반 제어 (Phase 2)")
+        st.markdown("물리 모델의 빠른 근사(Surrogate) + ML 기반 최적 제어")
+
+        ai_sub = st.selectbox("분석 모드", [
+            "📈 Surrogate 성능 비교",
+            "🎮 ML Controller 시뮬레이션",
+            "🔬 소재 스크리닝"
+        ])
+
+        if ai_sub == "📈 Surrogate 성능 비교":
+            st.subheader("Surrogate vs Full Simulation")
+            n_test = st.slider("테스트 샘플 수", 20, 200, 60)
+
+            if st.button("🚀 Surrogate 학습 & 비교", key="train_surrogate"):
+                with st.spinner("Phase 1 엔진으로 학습 데이터 생성 중..."):
+                    try:
+                        from engines.surrogate_model import PhysicsSurrogate
+                        from engines.multiscale_control import MultiscaleControlEngine
+
+                        engine = MultiscaleControlEngine()
+                        surrogate = PhysicsSurrogate()
+
+                        data = surrogate.generate_training_data(engine, n_samples=n_test)
+                        metrics = surrogate.train_steady_state(data)
+                        report = surrogate.accuracy_report(data)
+
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("P_out R²", f"{report['P_out']['R2']:.4f}")
+                        col2.metric("η R²", f"{report['eta']['R2']:.4f}")
+                        col3.metric("V_op R²", f"{report['V_op']['R2']:.4f}")
+
+                        # Scatter plot: true vs predicted
+                        for target in ['P_out', 'eta']:
+                            y_true = data[target]
+                            y_pred = np.array([
+                                surrogate.predict_steady(data['inputs'][i, 0],
+                                                         data['inputs'][i, 1],
+                                                         data['inputs'][i, 2])[target]
+                                for i in range(len(y_true))
+                            ])
+
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(x=y_true, y=y_pred, mode='markers',
+                                                     name=target, marker=dict(size=5)))
+                            rng = [min(y_true.min(), y_pred.min()),
+                                   max(y_true.max(), y_pred.max())]
+                            fig.add_trace(go.Scatter(x=rng, y=rng, mode='lines',
+                                                     name='Perfect', line=dict(dash='dash')))
+                            fig.update_layout(title=f"{target}: Full Sim vs Surrogate",
+                                              xaxis_title="Full Simulation",
+                                              yaxis_title="Surrogate Prediction")
+                            st.plotly_chart(fig, use_container_width=True)
+
+                        st.success("✅ Surrogate 학습 완료!")
+
+                    except Exception as e:
+                        st.error(f"오류: {e}")
+
+        elif ai_sub == "🎮 ML Controller 시뮬레이션":
+            st.subheader("ML 기반 실시간 V_G 제어")
+
+            if st.button("🧠 Controller 학습 & 시뮬레이션", key="train_controller"):
+                with st.spinner("Surrogate 학습 → Controller 학습 중..."):
+                    try:
+                        from engines.surrogate_model import PhysicsSurrogate
+                        from engines.ml_controller import MLController
+                        from engines.multiscale_control import MultiscaleControlEngine
+
+                        engine = MultiscaleControlEngine()
+                        surrogate = PhysicsSurrogate()
+                        data = surrogate.generate_training_data(engine, n_samples=60)
+                        surrogate.train_steady_state(data)
+
+                        ctrl = MLController(hidden_dims=[64, 32, 16])
+                        episodes = ctrl.generate_training_episodes(surrogate, n_episodes=50, steps_per_episode=48)
+                        losses = ctrl.train(episodes, epochs=80, lr=0.003)
+
+                        # Loss curve
+                        fig_loss = go.Figure()
+                        fig_loss.add_trace(go.Scatter(y=losses, mode='lines', name='Training Loss'))
+                        fig_loss.update_layout(title="학습 손실 곡선", xaxis_title="Epoch", yaxis_title="MSE Loss")
+                        st.plotly_chart(fig_loss, use_container_width=True)
+
+                        # 24h simulation
+                        hours = np.linspace(0, 24, 48)
+                        G_profile = np.maximum(0, np.sin(np.pi * hours / 24))
+                        T_profile = 300 + 10 * np.sin(np.pi * (hours - 6) / 12)
+                        Load_profile = 10 + 5 * np.sin(2 * np.pi * hours / 24)
+
+                        V_G_pred = []
+                        P_pred = []
+                        for i in range(48):
+                            state = np.array([G_profile[i], T_profile[i], Load_profile[i], 0.5, 10])
+                            vg = ctrl.predict(state)
+                            V_G_pred.append(vg)
+                            p = surrogate.predict_steady(vg, max(G_profile[i], 0.01), T_profile[i])
+                            P_pred.append(p['P_out'])
+
+                        fig_ctrl = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                                 subplot_titles=("V_G 제어 출력", "발전량 vs 부하"))
+                        fig_ctrl.add_trace(go.Scatter(x=hours, y=V_G_pred, name='V_G (ML)'), row=1, col=1)
+                        fig_ctrl.add_trace(go.Scatter(x=hours, y=P_pred, name='P_pv'), row=2, col=1)
+                        fig_ctrl.add_trace(go.Scatter(x=hours, y=Load_profile, name='Load',
+                                                      line=dict(dash='dash')), row=2, col=1)
+                        fig_ctrl.update_layout(height=500, title="24시간 ML 제어 시뮬레이션")
+                        st.plotly_chart(fig_ctrl, use_container_width=True)
+
+                        st.success("✅ ML Controller 시뮬레이션 완료!")
+                    except Exception as e:
+                        st.error(f"오류: {e}")
+
+        elif ai_sub == "🔬 소재 스크리닝":
+            st.subheader("동적 제어 최적 ABX₃ 소재 검색")
+
+            col1, col2 = st.columns(2)
+            tau_min = col1.number_input("τ_ion 최소 (ms)", value=1.0)
+            tau_max = col2.number_input("τ_ion 최대 (ms)", value=100.0)
+            stab_thresh = st.slider("최소 안정성 점수", 0.0, 10.0, 4.0)
+            eg_range = st.slider("밴드갭 범위 (eV)", 0.5, 3.5, (1.1, 1.8))
+            n_cand = st.slider("후보 수", 50, 500, 200)
+
+            if st.button("🔍 스크리닝 실행", key="screen_materials"):
+                with st.spinner("소재 스크리닝 중..."):
+                    try:
+                        from engines.material_predictor import MaterialPredictor
+
+                        mp = MaterialPredictor()
+                        results = mp.screen_for_dynamic_control(
+                            target_tau_range=(tau_min, tau_max),
+                            stability_threshold=stab_thresh,
+                            Eg_range=eg_range,
+                            n_candidates=n_cand,
+                        )
+
+                        if results:
+                            rows = []
+                            for r in results[:20]:
+                                p = r['properties']
+                                c = r['composition']
+                                name = " / ".join(f"{k.split('_')[1]}:{v:.2f}"
+                                                  for k, v in c.items() if v > 0.05)
+                                rows.append({
+                                    '조성': name,
+                                    'Eg (eV)': f"{p['Eg']:.2f}",
+                                    'μ_e': f"{p['mu_e']:.1f}",
+                                    'τ_ion (ms)': f"{p['tau_ion']:.1f}",
+                                    '안정성': f"{p['stability']:.1f}",
+                                })
+
+                            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                            st.success(f"✅ {len(results)}개 후보 발견 (상위 20개 표시)")
+                        else:
+                            st.warning("조건에 맞는 후보가 없습니다. 조건을 완화해보세요.")
+                    except Exception as e:
+                        st.error(f"오류: {e}")
 
 # =============================================================================
 # FOOTER
