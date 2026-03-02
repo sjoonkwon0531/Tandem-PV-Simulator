@@ -1022,6 +1022,86 @@ with tabs[-1]:
                 h3.metric("Lifetime Extension", f"{hess['lifetime_extension_factor']:.1f}x")
                 h4.metric("Cost Saving", f"${hess['cost_saving_usd_per_year']:.0f}/yr")
     
+        # ── Ion Dynamics Sub-section ──────────────────────────────
+        st.markdown("---")
+        st.subheader("🔬 이온 Drift-Diffusion (1D 정밀 모델)")
+        st.markdown("""
+        페로브스카이트 내부 I⁻ 이온의 1D drift-diffusion을 풀어
+        I-V 히스테리시스와 이온 분포를 시각화합니다.
+        """)
+
+        try:
+            from engines.ion_dynamics import IonDynamicsEngine
+
+            col_ion1, col_ion2 = st.columns(2)
+            with col_ion1:
+                sweep_rate = st.slider("Sweep rate (V/s)", 0.01, 10.0, 1.0,
+                                       key="ion_sweep")
+                ion_temp = st.slider("Temperature (K)", 260, 360, 300, 5,
+                                      key="ion_temp")
+            with col_ion2:
+                ion_thick = st.slider("Layer thickness (nm)", 200, 1000, 500, 50,
+                                       key="ion_thick")
+                ion_grid = st.slider("Grid points", 30, 200, 80, 10,
+                                      key="ion_grid")
+
+            if st.button("Run Ion Dynamics", key="run_ion"):
+                with st.spinner("Solving drift-diffusion..."):
+                    ion_eng = IonDynamicsEngine(
+                        layer_thickness_nm=ion_thick,
+                        grid_points=ion_grid,
+                    )
+                    hyst = ion_eng.hysteresis_iv(
+                        V_sweep_rate=sweep_rate, G=irradiance, T=ion_temp
+                    )
+
+                    # Hysteresis I-V
+                    fig_hyst = go.Figure()
+                    fig_hyst.add_trace(go.Scatter(
+                        x=hyst['V_forward'], y=hyst['I_forward'],
+                        mode='lines', name='Forward'))
+                    fig_hyst.add_trace(go.Scatter(
+                        x=hyst['V_reverse'], y=hyst['I_reverse'],
+                        mode='lines', name='Reverse',
+                        line=dict(dash='dash')))
+                    fig_hyst.update_layout(
+                        title=f"I-V Hysteresis (sweep {sweep_rate} V/s, HI={hyst['HI']:.3f})",
+                        xaxis_title="Voltage (V)",
+                        yaxis_title="Current (mA/cm²)",
+                        height=400)
+                    st.plotly_chart(fig_hyst, use_container_width=True)
+
+                    h1, h2, h3 = st.columns(3)
+                    h1.metric("PCE Forward", f"{hyst['PCE_forward']:.1f}%")
+                    h2.metric("PCE Reverse", f"{hyst['PCE_reverse']:.1f}%")
+                    h3.metric("Hysteresis Index", f"{hyst['HI']:.3f}")
+
+                    # Steady-state ion profile
+                    ss = ion_eng.steady_state(V_applied=0.8, G=irradiance, T=ion_temp)
+                    fig_ion = go.Figure()
+                    for name, prof in ss['n_ion'].items():
+                        fig_ion.add_trace(go.Scatter(
+                            x=ion_eng.x * 1e7,  # cm → nm
+                            y=prof,
+                            mode='lines', name=name))
+                    fig_ion.update_layout(
+                        title="Steady-State Ion Distribution",
+                        xaxis_title="Position (nm)",
+                        yaxis_title="Concentration (cm⁻³)",
+                        height=350)
+                    st.plotly_chart(fig_ion, use_container_width=True)
+
+                    # Response time
+                    resp = ion_eng.response_time(V_step=0.5, G=irradiance,
+                                                  T=ion_temp, duration_s=0.5,
+                                                  n_steps=200)
+                    r1, r2 = st.columns(2)
+                    r1.metric("τ_ion (63%)", f"{resp['tau_ion']*1e3:.1f} ms")
+                    r2.metric("τ_90", f"{resp['tau_90']*1e3:.1f} ms")
+
+        except Exception as e:
+            st.warning(f"Ion dynamics not available: {e}")
+
     except Exception as e:
         st.error(f"Dynamic Control engine error: {e}")
         import traceback

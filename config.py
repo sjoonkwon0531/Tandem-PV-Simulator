@@ -1503,6 +1503,39 @@ DEFAULT_CONFIG = {
         },
     },
 
+    # Ion dynamics parameters (1D drift-diffusion, Eames et al. 2015)
+    'ion_dynamics': {
+        'iodide': {
+            'D_i': 1e-12,          # cm²/s
+            'mu_i': 4e-11,         # cm²/Vs
+            'n_i0': 1.6e19,        # cm⁻³
+            'E_activation': 0.58,  # eV
+            'charge': -1,
+        },
+        'ma_cation': {
+            'D_i': 1e-16,          # cm²/s
+            'mu_i': 4e-15,         # cm²/Vs
+            'n_i0': 1.6e19,        # cm⁻³
+            'E_activation': 1.12,  # eV
+            'charge': +1,
+        },
+        'fa_cation': {
+            'D_i': 5e-16,          # cm²/s
+            'mu_i': 2e-14,         # cm²/Vs
+            'n_i0': 1.6e19,        # cm⁻³
+            'E_activation': 0.96,  # eV
+            'charge': +1,
+        },
+        'layer': {
+            'thickness_nm': 500,
+            'epsilon_r': 25,
+            'N_D': 1e16,           # cm⁻³
+            'N_A': 1e16,           # cm⁻³
+        },
+        'grid_points': 100,
+        'dt_ns': 1.0,
+    },
+
     # Physical constraints
     'min_layer_thickness': 50e-9,           # m (50 nm minimum)
     'max_layer_thickness': 50e-6,           # m (50 μm maximum)

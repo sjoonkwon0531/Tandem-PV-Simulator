@@ -27,6 +27,7 @@ __all__ = [
     "economics",
     "dynamic_iv",
     "load_matching",
+    "ion_dynamics",
 ]
 
 # Engine availability check
@@ -77,6 +78,12 @@ except ImportError:
 try:
     from . import load_matching
     AVAILABLE_ENGINES.append("load_matching")
+except ImportError:
+    pass
+
+try:
+    from . import ion_dynamics
+    AVAILABLE_ENGINES.append("ion_dynamics")
 except ImportError:
     pass
 

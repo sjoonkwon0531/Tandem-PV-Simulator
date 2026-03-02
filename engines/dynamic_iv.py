@@ -23,6 +23,13 @@ from scipy.constants import k as kB, elementary_charge as q
 
 from .iv_curve import SingleDiodeModel
 
+# Optional import for precision ion dynamics
+try:
+    from .ion_dynamics import IonDynamicsEngine as _IonEngine
+    _HAS_ION_ENGINE = True
+except ImportError:
+    _HAS_ION_ENGINE = False
+
 
 class DynamicIVEngine:
     """
@@ -100,6 +107,28 @@ class DynamicIVEngine:
         R_c = self.iface_params['R_contact']  # Ω
         C_i = self.iface_params['C_interface'] * 1e-6  # μF -> F
         self.tau_rc = R_c * C_i  # s
+
+        # Precision ion dynamics engine (lazy init)
+        self._ion_engine: object = None
+
+    def get_ion_engine(self) -> 'IonDynamicsEngine':
+        """Return (and lazily create) the precision 1D ion dynamics engine."""
+        if self._ion_engine is None and _HAS_ION_ENGINE:
+            ion_params = {
+                'iodide': {
+                    'D_i': self.pv_params.get('ion_diffusivity', 2.6e-11),
+                    'mu_i': self.pv_params.get('ion_mobility', 1e-9),
+                    'n_i0': self.pv_params.get('ion_density', 1e18),
+                    'E_activation': 0.58,
+                    'charge': -1,
+                }
+            }
+            self._ion_engine = _IonEngine(
+                layer_thickness_nm=self.pv_params['thickness'],
+                ion_params=ion_params,
+                grid_points=100,
+            )
+        return self._ion_engine
 
     def _make_cell(self, G: float = 1.0, T: Optional[float] = None) -> SingleDiodeModel:
         """Create a SingleDiodeModel for given irradiance and temperature."""
