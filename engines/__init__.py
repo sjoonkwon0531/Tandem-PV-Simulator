@@ -33,6 +33,9 @@ __all__ = [
     "surrogate_model",
     "ml_controller",
     "material_predictor",
+    "device_simulator",
+    "array_scaleup",
+    "system_integration",
 ]
 
 # Engine availability check
@@ -119,6 +122,24 @@ except ImportError:
 try:
     from . import material_predictor
     AVAILABLE_ENGINES.append("material_predictor")
+except ImportError:
+    pass
+
+try:
+    from . import device_simulator
+    AVAILABLE_ENGINES.append("device_simulator")
+except ImportError:
+    pass
+
+try:
+    from . import array_scaleup
+    AVAILABLE_ENGINES.append("array_scaleup")
+except ImportError:
+    pass
+
+try:
+    from . import system_integration
+    AVAILABLE_ENGINES.append("system_integration")
 except ImportError:
     pass
 

@@ -1461,6 +1461,190 @@ with tabs[-1]:
                         st.error(f"오류: {e}")
 
 # =============================================================================
+# PHASE 3: DEVICE APPLICATION MODELING
+# =============================================================================
+
+with st.expander("🔧 Phase 3-1: 디바이스 시뮬레이터 (PV-FET Device)", expanded=False):
+    st.subheader("PV-FET 일체형 디바이스 시뮬레이터")
+
+    col_mat1, col_mat2, col_mat3 = st.columns(3)
+    with col_mat1:
+        pvk_choice = st.selectbox("페로브스카이트", ['MAPbI3', 'FAPbI3', 'CsPbI3', 'MAPbBr3'], key='dev_pvk')
+    with col_mat2:
+        etl_choice = st.selectbox("ETL", ['SnO2', 'TiO2', 'ZnO', 'C60'], key='dev_etl')
+    with col_mat3:
+        htl_choice = st.selectbox("HTL", ['Spiro', 'PTAA', 'NiOx', 'P3HT'], key='dev_htl')
+
+    dev_vg = st.slider("Gate Voltage V_G (V)", 0.0, 5.0, 2.5, 0.1, key='dev_vg')
+
+    if st.button("🔬 시뮬레이션 실행", key='run_device'):
+        try:
+            from engines.device_simulator import PVFETDeviceSimulator
+            dev = PVFETDeviceSimulator()
+            dev.build_layer_stack(perovskite=pvk_choice, etl=etl_choice, htl=htl_choice)
+
+            # Band diagram
+            bd = dev.band_diagram(V_G=dev_vg, illumination=True)
+            fig_bd = go.Figure()
+            fig_bd.add_trace(go.Scatter(x=bd['x_nm'], y=bd['CB'], name='CB', line=dict(color='blue')))
+            fig_bd.add_trace(go.Scatter(x=bd['x_nm'], y=bd['VB'], name='VB', line=dict(color='red')))
+            fig_bd.add_trace(go.Scatter(x=bd['x_nm'], y=bd['E_Fn'], name='E_Fn', line=dict(dash='dash', color='blue')))
+            fig_bd.add_trace(go.Scatter(x=bd['x_nm'], y=bd['E_Fp'], name='E_Fp', line=dict(dash='dash', color='red')))
+            fig_bd.update_layout(title='에너지 밴드 다이어그램', xaxis_title='Position (nm)', yaxis_title='Energy (eV)',
+                                 height=400)
+            st.plotly_chart(fig_bd, use_container_width=True)
+
+            # J-V + P-V
+            V = np.linspace(0, 1.3, 200)
+            jv = dev.jv_characteristics(V, G=1.0, T=298.15, V_G=dev_vg)
+
+            col_jv1, col_jv2 = st.columns(2)
+            with col_jv1:
+                fig_jv = go.Figure()
+                fig_jv.add_trace(go.Scatter(x=jv['V'], y=jv['J'], name='J-V'))
+                fig_jv.update_layout(title='J-V 특성', xaxis_title='Voltage (V)', yaxis_title='J (mA/cm²)', height=350)
+                st.plotly_chart(fig_jv, use_container_width=True)
+
+            with col_jv2:
+                wl = np.linspace(350, 900, 100)
+                qe = dev.quantum_efficiency(wl, V_G=dev_vg)
+                fig_eqe = go.Figure()
+                fig_eqe.add_trace(go.Scatter(x=qe['wavelength_nm'], y=qe['EQE'], name='EQE'))
+                fig_eqe.update_layout(title='EQE 스펙트럼', xaxis_title='Wavelength (nm)', yaxis_title='EQE', height=350)
+                st.plotly_chart(fig_eqe, use_container_width=True)
+
+            # Metrics
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            mc1.metric("V_OC", f"{jv['V_OC']:.3f} V")
+            mc2.metric("J_SC", f"{jv['J_SC']:.1f} mA/cm²")
+            mc3.metric("FF", f"{jv['FF']:.3f}")
+            mc4.metric("PCE", f"{jv['PCE']*100:.1f}%")
+
+            # Parasitic loss pie chart
+            losses = dev.parasitic_loss_analysis()
+            fig_pie = go.Figure(data=[go.Pie(labels=list(losses.keys()),
+                                             values=list(losses.values()),
+                                             hole=0.3)])
+            fig_pie.update_layout(title='기생 손실 분석', height=350)
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"오류: {e}")
+
+with st.expander("📐 Phase 3-2: 어레이 스케일업", expanded=False):
+    st.subheader("모듈-어레이 스케일업 시뮬레이터")
+
+    col_arr1, col_arr2 = st.columns(2)
+    with col_arr1:
+        n_ser = st.number_input("직렬 셀 수", 4, 100, 6, key='arr_ns')
+    with col_arr2:
+        n_par = st.number_input("병렬 셀 수", 2, 20, 3, key='arr_np')
+
+    shade_pct = st.slider("부분 음영 (첫 행 %)", 0, 100, 50, key='shade_pct')
+
+    if st.button("📐 스케일업 분석", key='run_array'):
+        try:
+            from engines.device_simulator import PVFETDeviceSimulator
+            from engines.array_scaleup import ArrayScaleupEngine
+
+            cell = PVFETDeviceSimulator()
+            arr = ArrayScaleupEngine(cell, n_series=n_ser, n_parallel=n_par)
+
+            # Partial shading
+            shade = np.zeros((n_ser, n_par))
+            shade[0, :] = shade_pct / 100.0
+
+            res = arr.partial_shading_analysis(shade)
+
+            fig_shade = go.Figure(data=[
+                go.Bar(name='Uniform V_G', x=['Power'], y=[res['P_uniform']]),
+                go.Bar(name='Row V_G', x=['Power'], y=[res['P_row']]),
+                go.Bar(name='Individual V_G', x=['Power'], y=[res['P_individual']]),
+            ])
+            fig_shade.update_layout(title='부분 음영 시 V_G 전략 비교', yaxis_title='Module Power (mW)',
+                                    barmode='group', height=350)
+            st.plotly_chart(fig_shade, use_container_width=True)
+
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("Mismatch (Uniform)", f"{res['mismatch_loss_uniform']*100:.1f}%")
+            mc2.metric("Mismatch (Row)", f"{res['mismatch_loss_row']*100:.1f}%")
+            mc3.metric("Mismatch (Individual)", f"{res['mismatch_loss_individual']*100:.1f}%")
+
+            # Annual yield
+            yield_res = arr.annual_yield(location_lat=35)
+            st.info(f"📊 연간 발전량: **{yield_res['annual_kWh_per_kWp_mppt']:.0f}** kWh/kWp (MPPT) | "
+                    f"**{yield_res['annual_kWh_per_kWp_active']:.0f}** kWh/kWp (능동 제어) | "
+                    f"PR: {yield_res['PR_mppt']:.2f} → {yield_res['PR_active']:.2f}")
+
+        except Exception as e:
+            st.error(f"오류: {e}")
+
+with st.expander("🏭 Phase 3-3: 시스템 통합", expanded=False):
+    st.subheader("AIDC 마이크로그리드 통합 시뮬레이션")
+
+    if st.button("🏭 24시간 시뮬레이션", key='run_system'):
+        try:
+            from engines.device_simulator import PVFETDeviceSimulator
+            from engines.array_scaleup import ArrayScaleupEngine
+            from engines.system_integration import SystemIntegrationEngine
+
+            cell = PVFETDeviceSimulator()
+            arr = ArrayScaleupEngine(cell, n_series=6, n_parallel=3)
+            sys_eng = SystemIntegrationEngine(arr)
+
+            with st.spinner("24시간 시뮬레이션 중..."):
+                sim = sys_eng.simulate_24h()
+
+            # Stacked area: PV vs Load for each scenario
+            t_h = sim['time_min'] / 60
+            fig_24h = make_subplots(rows=2, cols=2, subplot_titles=['시나리오 A (MPPT)',
+                                    '시나리오 B (FET)', '시나리오 C (FET+Ion)', '시나리오 D (ML+축소HESS)'])
+            for idx, s in enumerate(['A', 'B', 'C', 'D']):
+                row, col = idx // 2 + 1, idx % 2 + 1
+                sc = sim['scenarios'][s]
+                fig_24h.add_trace(go.Scatter(x=t_h, y=sc['pv_kW']/1000, name=f'PV ({s})',
+                                             fill='tozeroy', showlegend=(idx==0)), row=row, col=col)
+                fig_24h.add_trace(go.Scatter(x=t_h, y=sc['load_kW']/1000, name=f'Load ({s})',
+                                             line=dict(color='red', dash='dash'), showlegend=(idx==0)), row=row, col=col)
+            fig_24h.update_layout(height=600, title='24시간 시스템 시뮬레이션 (MW)')
+            st.plotly_chart(fig_24h, use_container_width=True)
+
+            # Self-sufficiency comparison
+            ss_data = {s: sim['scenarios'][s]['self_sufficiency'] for s in 'ABCD'}
+            fig_ss = go.Figure(data=[go.Bar(x=list(ss_data.keys()), y=list(ss_data.values()),
+                                            marker_color=['#e74c3c', '#f39c12', '#27ae60', '#2980b9'])])
+            fig_ss.update_layout(title='자급률 비교', yaxis_title='Self-Sufficiency', height=300)
+            st.plotly_chart(fig_ss, use_container_width=True)
+
+            # Economic comparison
+            econ = sys_eng.economic_comparison()
+            econ_rows = []
+            for s in 'ABCD':
+                e = econ[s]
+                econ_rows.append({
+                    '시나리오': s,
+                    'CAPEX ($M)': f"{e['CAPEX']/1e6:.1f}",
+                    'LCOE ($/MWh)': f"{e['LCOE_per_MWh']:.1f}",
+                    'NPV ($M)': f"{e['NPV']/1e6:.1f}",
+                    'IRR (%)': f"{e['IRR']*100:.1f}",
+                    'Payback (yr)': f"{e['payback_years']:.1f}",
+                })
+            st.dataframe(pd.DataFrame(econ_rows), use_container_width=True)
+
+            # Sensitivity tornado
+            sens = sys_eng.sensitivity_analysis()
+            params = list(sens.keys())
+            deltas = [sens[p]['delta'] for p in params]
+            fig_tornado = go.Figure(data=[go.Bar(y=params, x=deltas, orientation='h',
+                                                  marker_color='#3498db')])
+            fig_tornado.update_layout(title='민감도 분석 (LCOE Δ)', xaxis_title='LCOE Change ($/MWh)',
+                                      height=350)
+            st.plotly_chart(fig_tornado, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"오류: {e}")
+
+# =============================================================================
 # FOOTER
 # =============================================================================
 
@@ -1471,6 +1655,7 @@ st.sidebar.markdown("✅ 2-stage workflow")
 st.sidebar.markdown("✅ Korean + English UI")
 st.sidebar.markdown("✅ Crystal phase warnings")
 st.sidebar.markdown("✅ Confidence scoring")
+st.sidebar.markdown("✅ Phase 3: Device + Array + System")
 
 if not perovskite_db.empty:
     st.sidebar.success(f"🔬 DB: {len(perovskite_db):,} compositions loaded")
