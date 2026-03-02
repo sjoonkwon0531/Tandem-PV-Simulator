@@ -1102,6 +1102,197 @@ with tabs[-1]:
         except Exception as e:
             st.warning(f"Ion dynamics not available: {e}")
 
+        # ── Interface Charge (Phase 1-3) ──────────────────────────
+        st.markdown("---")
+        st.subheader("🔬 계면 전하 플러싱 (μs 스케일)")
+        st.markdown("ETL/Perovskite 및 Perovskite/HTL 계면 트랩 동역학과 임피던스 분광법 시뮬레이션.")
+
+        try:
+            from engines.interface_charge import InterfaceChargeEngine
+
+            col_if1, col_if2 = st.columns(2)
+            with col_if1:
+                if_r_contact = st.slider("R_contact (Ω·cm²)", 1.0, 20.0, 5.0, 0.5, key="if_rc")
+                if_v_pulse = st.slider("Flush pulse V (V)", 0.5, 5.0, 2.0, 0.5, key="if_vp")
+            with col_if2:
+                if_pulse_w = st.slider("Pulse width (μs)", 10, 500, 100, 10, key="if_pw")
+                if_temp = st.slider("Temperature (K)", 260, 360, 300, 5, key="if_temp")
+
+            if st.button("Run Interface Charge Analysis", key="run_iface"):
+                with st.spinner("Computing interface dynamics..."):
+                    iface_eng = InterfaceChargeEngine(
+                        interface_params={'R_contact': if_r_contact, 'v_thermal': 1e7}
+                    )
+
+                    # 1. Impedance spectrum (Nyquist plot)
+                    freq = np.logspace(-1, 6, 200)
+                    z_data = iface_eng.impedance_spectrum(0.5, freq, if_temp)
+
+                    col_z1, col_z2 = st.columns(2)
+                    with col_z1:
+                        fig_nyq = go.Figure()
+                        fig_nyq.add_trace(go.Scatter(
+                            x=z_data['Z_real'], y=-z_data['Z_imag'],
+                            mode='lines+markers', marker=dict(size=3),
+                            name='Nyquist'))
+                        fig_nyq.update_layout(
+                            title="Impedance Nyquist Plot",
+                            xaxis_title="Z' (Ω·cm²)",
+                            yaxis_title="-Z'' (Ω·cm²)",
+                            height=350,
+                            yaxis=dict(scaleanchor="x", scaleratio=1))
+                        st.plotly_chart(fig_nyq, use_container_width=True)
+
+                    with col_z2:
+                        fig_bode = go.Figure()
+                        fig_bode.add_trace(go.Scatter(
+                            x=freq, y=z_data['Z_magnitude'],
+                            mode='lines', name='|Z|'))
+                        fig_bode.update_layout(
+                            title="Bode Plot (Magnitude)",
+                            xaxis_title="Frequency (Hz)",
+                            yaxis_title="|Z| (Ω·cm²)",
+                            xaxis_type="log", yaxis_type="log",
+                            height=350)
+                        st.plotly_chart(fig_bode, use_container_width=True)
+
+                    # 2. Flush response
+                    flush = iface_eng.flush_response(
+                        V_pulse=if_v_pulse, pulse_width=if_pulse_w * 1e-6,
+                        T=if_temp, dt=1e-6)
+
+                    fig_flush = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                             subplot_titles=["Trapped Charge", "Recombination Current"])
+                    fig_flush.add_trace(go.Scatter(
+                        x=flush['time'] * 1e6, y=flush['n_t_etl'],
+                        name='ETL traps'), row=1, col=1)
+                    fig_flush.add_trace(go.Scatter(
+                        x=flush['time'] * 1e6, y=flush['n_t_htl'],
+                        name='HTL traps'), row=1, col=1)
+                    fig_flush.add_trace(go.Scatter(
+                        x=flush['time'] * 1e6, y=flush['J_rec'],
+                        name='J_rec'), row=2, col=1)
+                    fig_flush.add_vrect(x0=0, x1=if_pulse_w,
+                                       fillcolor="yellow", opacity=0.2,
+                                       annotation_text="Pulse", row=1, col=1)
+                    fig_flush.update_layout(height=500, title="Flush Pulse Response")
+                    fig_flush.update_xaxes(title_text="Time (μs)", row=2, col=1)
+                    st.plotly_chart(fig_flush, use_container_width=True)
+
+                    st.metric("τ_RC (ETL)", f"{iface_eng.tau_rc_etl*1e6:.1f} μs")
+
+        except Exception as e:
+            st.warning(f"Interface charge engine not available: {e}")
+
+        # ── Multiscale Integration ────────────────────────────────
+        st.markdown("---")
+        st.subheader("🌐 멀티스케일 통합 시뮬레이션")
+        st.markdown("""
+        3개 시간 스케일 (초/ms/μs) 통합 Operator Splitting 시뮬레이션.
+        """)
+
+        try:
+            from engines.multiscale_control import MultiscaleControlEngine
+
+            col_ms1, col_ms2 = st.columns(2)
+            with col_ms1:
+                ms_duration = st.slider("Duration (s)", 5, 60, 20, 5, key="ms_dur")
+                ms_vg = st.slider("V_G (V)", 0.0, 5.0, 3.0, 0.5, key="ms_vg")
+            with col_ms2:
+                ms_irr = st.slider("Irradiance (suns)", 0.1, 1.5, 1.0, 0.1, key="ms_irr")
+
+            if st.button("Run Multiscale Simulation", key="run_ms"):
+                with st.spinner("Running 3-scale simulation..."):
+                    ms_eng = MultiscaleControlEngine(
+                        pv_params={'bandgap': pv_bg, 'thickness': pv_thick},
+                        fet_params={'V_th': fet_vth, 'W_L': fet_wl},
+                        interface_params={'R_contact': 5.0},
+                    )
+                    N_ms = ms_duration
+                    V_G_ms = np.full(N_ms, ms_vg)
+                    G_ms = np.full(N_ms, ms_irr)
+                    T_ms = np.full(N_ms, 300.0)
+
+                    res_ms = ms_eng.simulate_multiscale(
+                        V_G_ms, G_ms, T_ms, ms_duration,
+                        n_medium_per_coarse=5, n_fine_per_medium=5)
+
+                    # Stacked timeseries
+                    fig_ms = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                                          subplot_titles=["P_out (mW/cm²)", "ΔV_ion (V)", "J_rec (mA/cm²)"])
+                    fig_ms.add_trace(go.Scatter(x=res_ms.time_s, y=res_ms.P_out,
+                                               name='P_out'), row=1, col=1)
+                    fig_ms.add_trace(go.Scatter(x=res_ms.time_s, y=res_ms.dV_ion,
+                                               name='ΔV_ion'), row=2, col=1)
+                    fig_ms.add_trace(go.Scatter(x=res_ms.time_s, y=res_ms.J_rec_interface,
+                                               name='J_rec'), row=3, col=1)
+                    fig_ms.update_layout(height=600, title="Multiscale Simulation Results")
+                    fig_ms.update_xaxes(title_text="Time (s)", row=3, col=1)
+                    st.plotly_chart(fig_ms, use_container_width=True)
+
+                    # Performance summary
+                    summary = ms_eng.performance_summary()
+                    s1, s2, s3, s4 = st.columns(4)
+                    s1.metric("P_max", f"{summary['P_max_mW_cm2']:.2f} mW/cm²")
+                    s2.metric("Dynamic Range", f"{summary['dynamic_range']:.1f}x")
+                    s3.metric("τ_interface", f"{summary['tau_interface_us']:.1f} μs")
+                    s4.metric("τ_ion", f"{summary['tau_ion_ms']:.1f} ms")
+
+                    # Energy balance
+                    eb = summary['energy_balance']
+                    st.markdown("**에너지 밸런스:**")
+                    st.json(eb)
+
+            # ── Comparative Analysis ──────────────────────────────
+            st.markdown("---")
+            st.subheader("📊 비교 분석: 제어 단계별 누적 효과")
+
+            if st.button("Run Comparative Analysis", key="run_compare"):
+                with st.spinner("Comparing control strategies..."):
+                    N_cmp = 20
+                    G_cmp = np.full(N_cmp, 1.0)
+                    T_cmp = np.full(N_cmp, 300.0)
+
+                    # Scenario 1: No control (V_G max, no ion/interface)
+                    eng_base = DynamicIVEngine(
+                        {'bandgap': pv_bg, 'thickness': pv_thick},
+                        {'V_th': fet_vth, 'W_L': fet_wl}, {})
+                    P_nocontrol = np.array([eng_base.operating_point(5.0, g, 300.0)['P_out'] for g in G_cmp])
+
+                    # Scenario 2: FET only
+                    P_fet = np.array([eng_base.operating_point(3.0, g, 300.0)['P_out'] for g in G_cmp])
+
+                    # Scenario 3: FET + Ion
+                    ms_eng2 = MultiscaleControlEngine(
+                        pv_params={'bandgap': pv_bg, 'thickness': pv_thick},
+                        fet_params={'V_th': fet_vth, 'W_L': fet_wl},
+                        interface_params={'R_contact': 5.0},
+                    )
+                    res_fi = ms_eng2.simulate_multiscale(
+                        np.full(N_cmp, 3.0), G_cmp, T_cmp, 20.0,
+                        n_medium_per_coarse=5, n_fine_per_medium=3)
+                    P_fet_ion = res_fi.P_out
+
+                    # Scenario 4: FET + Ion + Interface (full)
+                    res_full = ms_eng2.simulate_multiscale(
+                        np.full(N_cmp, 3.0), G_cmp, T_cmp, 20.0,
+                        n_medium_per_coarse=5, n_fine_per_medium=5)
+                    P_full = res_full.P_out
+
+                    t_cmp = np.arange(N_cmp)
+                    fig_cmp = go.Figure()
+                    fig_cmp.add_trace(go.Scatter(x=t_cmp, y=P_nocontrol, name='No Control (MPPT)', line=dict(dash='dot')))
+                    fig_cmp.add_trace(go.Scatter(x=t_cmp, y=P_fet, name='FET Only'))
+                    fig_cmp.add_trace(go.Scatter(x=t_cmp, y=P_fet_ion, name='FET + Ion'))
+                    fig_cmp.add_trace(go.Scatter(x=t_cmp, y=P_full, name='FET + Ion + Interface'))
+                    fig_cmp.update_layout(title="Control Strategy Comparison",
+                                        xaxis_title="Time step", yaxis_title="P_out (mW/cm²)",
+                                        height=400)
+                    st.plotly_chart(fig_cmp, use_container_width=True)
+
+        except Exception as e:
+            st.warning(f"Multiscale engine not available: {e}")
+
     except Exception as e:
         st.error(f"Dynamic Control engine error: {e}")
         import traceback

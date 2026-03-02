@@ -1536,6 +1536,26 @@ DEFAULT_CONFIG = {
         'dt_ns': 1.0,
     },
 
+    # Interface charge dynamics (Phase 1-3, μs timescale)
+    'interface_charge': {
+        'etl_interface': {  # SnO₂/Perovskite
+            'N_t': 1e17,          # cm⁻³ (trap density)
+            'E_t': 0.3,           # eV (trap depth from CB)
+            'sigma_n': 1e-15,     # cm² (electron capture cross-section)
+            'sigma_p': 1e-17,     # cm² (hole capture cross-section)
+            'C_geo': 30e-9,       # F/cm² (geometric capacitance)
+        },
+        'htl_interface': {  # Perovskite/Spiro-OMeTAD
+            'N_t': 5e16,          # cm⁻³
+            'E_t': 0.4,           # eV (trap depth from VB)
+            'sigma_n': 1e-17,     # cm²
+            'sigma_p': 1e-15,     # cm²
+            'C_geo': 25e-9,       # F/cm²
+        },
+        'R_contact': 5.0,         # Ω·cm² (contact resistance)
+        'v_thermal': 1e7,         # cm/s (thermal velocity at 300K)
+    },
+
     # Physical constraints
     'min_layer_thickness': 50e-9,           # m (50 nm minimum)
     'max_layer_thickness': 50e-6,           # m (50 μm maximum)

@@ -28,6 +28,8 @@ __all__ = [
     "dynamic_iv",
     "load_matching",
     "ion_dynamics",
+    "interface_charge",
+    "multiscale_control",
 ]
 
 # Engine availability check
@@ -84,6 +86,18 @@ except ImportError:
 try:
     from . import ion_dynamics
     AVAILABLE_ENGINES.append("ion_dynamics")
+except ImportError:
+    pass
+
+try:
+    from . import interface_charge
+    AVAILABLE_ENGINES.append("interface_charge")
+except ImportError:
+    pass
+
+try:
+    from . import multiscale_control
+    AVAILABLE_ENGINES.append("multiscale_control")
 except ImportError:
     pass
 
