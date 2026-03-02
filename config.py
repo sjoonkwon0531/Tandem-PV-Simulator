@@ -1479,6 +1479,30 @@ DEFAULT_CONFIG = {
     'installation_cost': 1.5,               # USD/Wp
     'bos_cost': 0.8,                        # USD/Wp (balance of systems)
     
+    # Dynamic control parameters (PV-FET active output control)
+    'dynamic_control': {
+        'perovskite': {
+            'bandgap': 1.55,           # eV (MAPbI3)
+            'thickness': 500,          # nm
+            'ion_density': 1e18,       # cm⁻³ (I⁻ vacancy)
+            'ion_mobility': 1e-9,      # cm²/V·s
+            'ion_diffusivity': 2.6e-11,# cm²/s
+            'V_bi': 1.0,              # V (built-in voltage)
+        },
+        'fet': {
+            'mu_fe': 20,              # cm²/V·s (IGZO field-effect mobility)
+            'C_ox': 300,              # nF/cm² (Al2O3 gate oxide)
+            'W_L': 100,              # W/L ratio
+            'V_th': 0.5,             # V (threshold voltage)
+            'V_G_max': 5.0,          # V (max gate voltage)
+        },
+        'interface': {
+            'R_contact': 10,          # Ω (contact resistance)
+            'C_interface': 44,        # μF/cm² (BaTiO3 quasi-capacitor)
+            'n_traps': 1e12,          # cm⁻² (interface trap density)
+        },
+    },
+
     # Physical constraints
     'min_layer_thickness': 50e-9,           # m (50 nm minimum)
     'max_layer_thickness': 50e-6,           # m (50 μm maximum)

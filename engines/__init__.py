@@ -24,7 +24,9 @@ __all__ = [
     "interface_loss",
     "thermal_model",
     "stability",
-    "economics"
+    "economics",
+    "dynamic_iv",
+    "load_matching",
 ]
 
 # Engine availability check
@@ -63,6 +65,18 @@ except ImportError:
 try:
     from . import economics
     AVAILABLE_ENGINES.append("economics")
+except ImportError:
+    pass
+
+try:
+    from . import dynamic_iv
+    AVAILABLE_ENGINES.append("dynamic_iv")
+except ImportError:
+    pass
+
+try:
+    from . import load_matching
+    AVAILABLE_ENGINES.append("load_matching")
 except ImportError:
     pass
 

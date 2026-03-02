@@ -475,6 +475,9 @@ if all([track, n_junctions, electrode_top, electrode_bottom, etl, htl]):
             "📊 민감도 분석", "🏭 공정 레시피"
         ])
     
+    # Always add Dynamic Control tab
+    tab_list.append("🔄 Dynamic Control")
+    
     tabs = st.tabs(tab_list)
     
     # =============================================================================
@@ -895,6 +898,134 @@ if stage2_button:
     st.info("🚀 Stage 2 simulation would run here with full physics calculations...")
     st.info("Implementation: detailed I-V, stability, economics, etc.")
     st.session_state.stage2_complete = True
+
+# =============================================================================
+# TAB: Dynamic Control (🔄)
+# =============================================================================
+
+with tabs[-1]:
+    st.header("🔄 Dynamic PV Output Control")
+    st.markdown("""
+    PV-FET 일체형 능동 출력 제어 시뮬레이션.
+    게이트 전압(V_G)으로 태양전지의 운영점을 실시간 제어합니다.
+    """)
+    
+    try:
+        from engines.dynamic_iv import DynamicIVEngine
+        from engines.load_matching import LoadMatchingEngine
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.subheader("Perovskite PV")
+            pv_bg = st.slider("Bandgap (eV)", 1.2, 2.0, 1.55, 0.05, key="dyn_bg")
+            pv_thick = st.slider("Thickness (nm)", 200, 1000, 500, 50, key="dyn_thick")
+        with col2:
+            st.subheader("IGZO FET")
+            fet_vth = st.slider("V_th (V)", 0.1, 2.0, 0.5, 0.1, key="dyn_vth")
+            fet_wl = st.slider("W/L ratio", 10, 500, 100, 10, key="dyn_wl")
+        with col3:
+            st.subheader("Control")
+            vg_control = st.slider("V_G (V)", 0.0, 5.0, 3.0, 0.1, key="dyn_vg")
+            irradiance = st.slider("Irradiance (suns)", 0.1, 1.5, 1.0, 0.1, key="dyn_irr")
+        
+        # Create engine
+        engine = DynamicIVEngine(
+            {'bandgap': pv_bg, 'thickness': pv_thick},
+            {'V_th': fet_vth, 'W_L': fet_wl},
+            {}
+        )
+        
+        # Operating point
+        op = engine.operating_point(vg_control, G=irradiance)
+        
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("V_op", f"{op['V_op']:.3f} V")
+        m2.metric("I_op", f"{op['I_op']:.2f} mA/cm²")
+        m3.metric("P_out", f"{op['P_out']:.2f} mW/cm²")
+        m4.metric("η", f"{op['eta']*100:.1f}%")
+        
+        # I-V curve with operating point
+        V_arr = np.linspace(0, 1.3, 100)
+        I_arr = engine.static_iv(V_arr, G=irradiance)
+        
+        fig_iv = go.Figure()
+        fig_iv.add_trace(go.Scatter(x=V_arr, y=I_arr, mode='lines', name='I-V Curve'))
+        # Load line
+        g_ch = engine._channel_conductance(vg_control)
+        if g_ch > 0:
+            V_load = np.linspace(0, 1.3, 100)
+            I_load = g_ch * V_load
+            fig_iv.add_trace(go.Scatter(x=V_load, y=I_load, mode='lines',
+                                       name=f'Load Line (V_G={vg_control:.1f}V)',
+                                       line=dict(dash='dash', color='red')))
+        fig_iv.add_trace(go.Scatter(x=[op['V_op']], y=[op['I_op']],
+                                   mode='markers', name='Operating Point',
+                                   marker=dict(size=12, color='green', symbol='star')))
+        fig_iv.update_layout(title="I-V Curve with Operating Point",
+                           xaxis_title="Voltage (V)", yaxis_title="Current (mA/cm²)",
+                           height=400)
+        st.plotly_chart(fig_iv, use_container_width=True)
+        
+        # Power envelope
+        st.subheader("⚡ Power Envelope (V_G Sweep)")
+        env = engine.power_envelope(G=irradiance)
+        
+        col_env1, col_env2 = st.columns(2)
+        with col_env1:
+            fig_env = go.Figure()
+            fig_env.add_trace(go.Scatter(x=env['V_G'], y=env['P'], mode='lines',
+                                        name='Power', line=dict(color='orange')))
+            fig_env.add_vline(x=vg_control, line_dash="dash", line_color="green",
+                            annotation_text=f"V_G={vg_control:.1f}V")
+            fig_env.update_layout(title="Power vs Gate Voltage",
+                                xaxis_title="V_G (V)", yaxis_title="P_out (mW/cm²)",
+                                height=350)
+            st.plotly_chart(fig_env, use_container_width=True)
+        
+        with col_env2:
+            st.metric("P_min", f"{env['P_min']:.2f} mW/cm²")
+            st.metric("P_max", f"{env['P_max']:.2f} mW/cm²")
+            st.metric("Dynamic Range", f"{env['dynamic_range']:.1f}x")
+            st.metric("V_G optimal", f"{env['V_G_opt']:.2f} V")
+            st.metric("τ_ion", f"{engine.ion_time_constant_ms:.1f} ms")
+            st.metric("τ_RC", f"{engine.rc_time_constant_us:.1f} μs")
+        
+        # 24h simulation
+        st.subheader("📊 24시간 PV-AIDC 매칭 시뮬레이션")
+        if st.button("Run 24h Simulation", key="run_24h"):
+            with st.spinner("Simulating..."):
+                lm = LoadMatchingEngine(engine)
+                load_data = lm.generate_aidc_load(hours=24, gpu_count=100, dt=60)
+                pv_no_ctrl = lm.generate_pv_output(hours=24, dt=60, pv_capacity_kW=load_data['P_peak_kW']*0.3)
+                pv_with_ctrl = lm.generate_pv_output(hours=24, dt=60, pv_capacity_kW=load_data['P_peak_kW']*0.3,
+                                                     with_control=True, target_load=load_data['load_kW'])
+                
+                match_no = lm.match_analysis(pv_no_ctrl['pv_kW'], load_data['load_kW'], dt=60)
+                match_yes = lm.match_analysis(pv_with_ctrl['pv_kW'], load_data['load_kW'], dt=60)
+                hess = lm.hess_reduction(match_yes, match_no)
+                
+                hours_arr = load_data['time_s'] / 3600
+                fig_24h = go.Figure()
+                fig_24h.add_trace(go.Scatter(x=hours_arr, y=load_data['load_kW'],
+                                           name='AIDC Load', line=dict(color='red')))
+                fig_24h.add_trace(go.Scatter(x=hours_arr, y=pv_no_ctrl['pv_kW'],
+                                           name='PV (no control)', line=dict(color='blue', dash='dot')))
+                fig_24h.add_trace(go.Scatter(x=hours_arr, y=pv_with_ctrl['pv_kW'],
+                                           name='PV (active control)', line=dict(color='green')))
+                fig_24h.update_layout(title="24h PV Output vs AIDC Load",
+                                    xaxis_title="Hour", yaxis_title="Power (kW)", height=400)
+                st.plotly_chart(fig_24h, use_container_width=True)
+                
+                h1, h2, h3, h4 = st.columns(4)
+                h1.metric("HESS Capacity Reduction", f"{hess['capacity_reduction_pct']:.1f}%")
+                h2.metric("Cycling Reduction", f"{hess['cycling_reduction_pct']:.1f}%")
+                h3.metric("Lifetime Extension", f"{hess['lifetime_extension_factor']:.1f}x")
+                h4.metric("Cost Saving", f"${hess['cost_saving_usd_per_year']:.0f}/yr")
+    
+    except Exception as e:
+        st.error(f"Dynamic Control engine error: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 # =============================================================================
 # FOOTER
