@@ -382,6 +382,93 @@ class BandgapPredictor:
         }).sort_values('importance', ascending=False)
         
         return df
+    
+    def fine_tune(self, df_new: pd.DataFrame, formula_col: str = 'formula',
+                 target_col: str = 'bandgap', learning_rate: float = 0.05) -> Dict[str, float]:
+        """
+        Fine-tune existing model on new user data.
+        
+        This adapts the pre-trained model to user's specific experimental conditions
+        (e.g., fabrication method, measurement setup) without forgetting database knowledge.
+        
+        Args:
+            df_new: New experimental data from user
+            formula_col: Column name for formulas
+            target_col: Column name for bandgap
+            learning_rate: Learning rate for fine-tuning (lower = less aggressive)
+        
+        Returns:
+            Dict with fine-tuning metrics (before/after accuracy)
+        """
+        if not self.trained:
+            raise ValueError("Cannot fine-tune untrained model. Train on database first!")
+        
+        # Clean new data
+        df_clean = df_new[[formula_col, target_col]].dropna()
+        
+        if len(df_clean) < 5:
+            raise ValueError("Need at least 5 samples for fine-tuning")
+        
+        # Featurize
+        X_new = np.array([self.featurizer.featurize(f) for f in df_clean[formula_col]])
+        y_new = df_clean[target_col].values
+        
+        # Scale features (using existing scaler)
+        X_new_scaled = self.scaler.transform(X_new)
+        
+        # Evaluate before fine-tuning
+        y_pred_before = self.model.predict(X_new_scaled)
+        mae_before = np.mean(np.abs(y_pred_before - y_new))
+        r2_before = 1 - np.sum((y_new - y_pred_before)**2) / np.sum((y_new - y_new.mean())**2)
+        
+        # Fine-tune model
+        # For XGBoost: retrain with warm_start (continue training)
+        # For RandomForest: partial refit with combined data
+        
+        if isinstance(self.model, XGBRegressor) and XGBOOST_AVAILABLE:
+            # XGBoost incremental training
+            # Combine old and new data (with new data weighted higher)
+            X_combined = np.vstack([self.X_train, X_new_scaled])
+            y_combined = np.concatenate([self.y_train, y_new])
+            
+            # Sample weights: higher weight for new data
+            weights = np.ones(len(y_combined))
+            weights[-len(y_new):] = 1.0 / learning_rate  # Higher weight for new data
+            
+            self.model.fit(X_combined, y_combined, sample_weight=weights)
+            
+            # Update training data
+            self.X_train = X_combined
+            self.y_train = y_combined
+        
+        else:
+            # RandomForest: retrain on combined data
+            X_combined = np.vstack([self.X_train, X_new_scaled])
+            y_combined = np.concatenate([self.y_train, y_new])
+            
+            self.model.fit(X_combined, y_combined)
+            
+            self.X_train = X_combined
+            self.y_train = y_combined
+        
+        # Evaluate after fine-tuning
+        y_pred_after = self.model.predict(X_new_scaled)
+        mae_after = np.mean(np.abs(y_pred_after - y_new))
+        r2_after = 1 - np.sum((y_new - y_pred_after)**2) / np.sum((y_new - y_new.mean())**2)
+        
+        # Update training score
+        self.train_score['n_samples'] = len(self.y_train)
+        
+        return {
+            'n_new_samples': len(y_new),
+            'mae_before': mae_before,
+            'mae_after': mae_after,
+            'mae_improvement': mae_before - mae_after,
+            'r2_before': r2_before,
+            'r2_after': r2_after,
+            'r2_improvement': r2_after - r2_before,
+            'total_samples': len(self.y_train)
+        }
 
 
 def train_default_model(df: pd.DataFrame, save_path: Optional[str] = None) -> BandgapPredictor:
