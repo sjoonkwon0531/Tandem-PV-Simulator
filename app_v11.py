@@ -44,7 +44,13 @@ import time
 import psutil
 
 # Add utils to path
-sys.path.insert(0, str(Path(__file__).parent / 'utils'))
+_utils_dir = str(Path(__file__).parent / 'utils')
+if _utils_dir not in sys.path:
+    sys.path.insert(0, _utils_dir)
+# Also add parent for relative imports
+_parent_dir = str(Path(__file__).parent)
+if _parent_dir not in sys.path:
+    sys.path.insert(0, _parent_dir)
 
 # ═══════════════════════════════════════════════
 # IMPORTS — All modules V5-V11
