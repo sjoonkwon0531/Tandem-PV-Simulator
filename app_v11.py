@@ -119,7 +119,7 @@ def get_theme(name="dark"):
     return _THEMES.get(name, _THEMES["dark"])
 
 def generate_css(theme, font_size=14):
-    return f"<style>.stMarkdown p {{ font-size: {font_size}px; }}</style>"
+    return ""
 
 def get_chart_colors(colorblind_safe=False):
     return COLORBLIND_SAFE if colorblind_safe else _THEMES["dark"].chart_colors
