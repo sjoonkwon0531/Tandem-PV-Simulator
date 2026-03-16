@@ -1190,43 +1190,765 @@ def render_campaign_dashboard(theme, colorblind):
 
 
 # Additional placeholder functions for V7-V10 tabs
-def render_placeholder(tab_name: str, version: str):
-    """Placeholder for tabs not yet fully implemented."""
-    st.header(tab_name)
-    st.info(f"""
-    This feature is documented in **{version}**.
+# ═══════════════════════════════════════════════
+# V7 TABS
+# ═══════════════════════════════════════════════
+
+def render_digital_twin(theme, colorblind):
+    """Digital Twin - process simulation."""
+    st.header("🏭 Digital Twin Process Simulation")
+    st.markdown("**Real-time film formation: Spin → Nucleation → Grain Growth**")
     
-    Core functionality available via utility modules.
-    See `app_{version.lower()}.py` for reference implementation.
+    try:
+        if 'digital_twin' not in st.session_state or st.session_state.digital_twin is None:
+            st.session_state.digital_twin = DigitalTwin()
+        
+        twin = st.session_state.digital_twin
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            spin_speed = st.slider("Spin Speed (rpm)", 1000, 6000, 3000, 500, key="twin_spin")
+        with col2:
+            anneal_temp = st.slider("Anneal Temp (°C)", 50, 150, 100, 10, key="twin_temp")
+        with col3:
+            anneal_time = st.slider("Anneal Time (s)", 300, 1200, 600, 60, key="twin_time")
+        with col4:
+            precursor = st.slider("Precursor (M)", 0.5, 2.0, 1.0, 0.1, key="twin_prec")
+        
+        if st.button("🚀 Run Simulation", type="primary", key="twin_run"):
+            with st.spinner("Simulating film formation..."):
+                df_sim = twin.simulate_formation(spin_speed, anneal_temp, anneal_time, precursor, n_points=500)
+                final_props = twin.predict_final_properties(df_sim, 1.55)
+                
+                st.success("✅ Simulation complete!")
+                
+                col_a, col_b, col_c, col_d = st.columns(4)
+                with col_a:
+                    st.metric("Grain Size", f"{final_props['grain_size_nm']:.1f} nm")
+                with col_b:
+                    st.metric("Roughness", f"{final_props['roughness_nm']:.1f} nm")
+                with col_c:
+                    st.metric("Crystallinity", f"{final_props['crystallinity']:.2%}")
+                with col_d:
+                    quality = "🟢" if final_props['quality_score'] > 0.7 else "🟡"
+                    st.metric("Quality", f"{quality} {final_props['quality_score']:.2f}")
+                
+                fig = twin.plot_time_series(df_sim)
+                fig.update_layout(template="plotly_white")
+                st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Digital Twin error: {e}")
+
+
+def render_autonomous_scheduler(theme, colorblind):
+    """Autonomous Scheduler - closed-loop optimization."""
+    st.header("🤖 Autonomous Experiment Scheduler")
+    st.markdown("**Closed-loop: Predict → Suggest → Learn → Repeat**")
+    
+    try:
+        if not st.session_state.get('model_trained', False):
+            st.warning("💡 Train ML model first (Tab: ML Surrogate Model)")
+            return
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            max_iter = st.slider("Max Iterations", 5, 50, 20, 5, key="auto_iter")
+        with col2:
+            batch_size = st.slider("Batch Size", 1, 10, 3, key="auto_batch")
+        
+        if st.button("🚀 Start Autonomous Loop", type="primary", key="auto_run"):
+            with st.spinner("Running autonomous optimization..."):
+                scheduler = AutonomousScheduler(
+                    ml_model=st.session_state.ml_model,
+                    initial_data=st.session_state.get('user_data') or st.session_state.combined_data.head(20),
+                    target_bandgap=1.35
+                )
+                
+                iteration_df = scheduler.run_autonomous_loop(max_iter, batch_size=batch_size, verbose=False)
+                
+                st.success(f"✅ Completed {len(iteration_df)} iterations!")
+                
+                fig = scheduler.plot_convergence(iteration_df)
+                fig.update_layout(template="plotly_white")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                top_disc = scheduler.get_top_discoveries(5)
+                st.dataframe(top_disc, use_container_width=True)
+    except Exception as e:
+        st.error(f"Autonomous scheduler error: {e}")
+
+
+def render_transfer_learning(theme, colorblind):
+    """Transfer Learning - cross-domain knowledge."""
+    st.header("🔄 Transfer Learning Across Domains")
+    st.markdown("**Learn from halides → transfer to oxides/chalcogenides**")
+    
+    try:
+        if 'transfer_engine' not in st.session_state or st.session_state.transfer_engine is None:
+            st.session_state.transfer_engine = TransferLearningEngine()
+        
+        engine = st.session_state.transfer_engine
+        domains = list(engine.knowledge_base.DOMAINS.keys())
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            source = st.selectbox("Source Domain", domains, key="tl_source")
+        with col2:
+            target = st.selectbox("Target Domain", [d for d in domains if d != source], key="tl_target")
+        
+        if st.button("🔄 Transfer Knowledge", type="primary", key="tl_transfer"):
+            with st.spinner(f"Transferring from {source} to {target}..."):
+                result = engine.transfer_knowledge(source, target, None)
+                
+                st.success("✅ Transfer complete!")
+                
+                st.markdown("### 💡 Cross-Domain Insights")
+                for insight in result['insights']:
+                    st.info(insight)
+                
+                features_df = pd.DataFrame({
+                    'Feature': result['key_features'],
+                    'Importance': result['feature_importances']
+                })
+                
+                fig = px.bar(features_df.head(10), x='Importance', y='Feature', orientation='h',
+                           title="Top Features from Source Domain")
+                fig.update_layout(template="plotly_white")
+                st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Transfer learning error: {e}")
+
+
+def render_what_if_scenarios(theme, colorblind):
+    """What-If Scenarios - policy impact."""
+    st.header("🌍 What-If Scenario Engine")
+    st.markdown("**Policy impact, cost sensitivity, constraint analysis**")
+    
+    try:
+        if 'scenario_engine' not in st.session_state or st.session_state.scenario_engine is None:
+            inverse_engine = st.session_state.get('inverse_engine') or InverseDesignEngine(None, None)
+            techno = st.session_state.get('techno_analyzer') or TechnoEconomicAnalyzer()
+            st.session_state.scenario_engine = ScenarioEngine(inverse_engine, techno)
+        
+        engine = st.session_state.scenario_engine
+        scenarios = list(engine.predefined_scenarios.keys())
+        
+        scenario_key = st.selectbox("Select Scenario", scenarios,
+                                   format_func=lambda k: engine.predefined_scenarios[k].name, key="scenario_sel")
+        
+        scenario = engine.predefined_scenarios[scenario_key]
+        
+        st.info(f"**{scenario.name}:** {scenario.description}")
+        
+        if st.button("▶️ Run Scenario", type="primary", key="scenario_run"):
+            with st.spinner(f"Running {scenario.name}..."):
+                candidates = engine.run_scenario(scenario, n_candidates=300, verbose=False)
+                
+                if len(candidates) > 0:
+                    st.success(f"✅ Found {len(candidates)} candidates!")
+                    st.dataframe(candidates.head(10), use_container_width=True)
+                    
+                    fig = engine.plot_feasibility_map(scenario, candidates)
+                    fig.update_layout(template="plotly_white")
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("⚠️ No candidates satisfy constraints. Try relaxing them.")
+    except Exception as e:
+        st.error(f"Scenario engine error: {e}")
+
+
+def render_collaborative_discovery(theme, colorblind):
+    """Collaborative Discovery - multi-user sharing."""
+    st.header("👥 Collaborative Discovery")
+    st.markdown("**Multi-user session: Share discoveries across labs**")
+    
+    if 'collaborative_discoveries' not in st.session_state:
+        st.session_state.collaborative_discoveries = []
+    if 'user_id' not in st.session_state:
+        st.session_state.user_id = f"Lab_{np.random.randint(100, 999)}"
+    
+    st.markdown(f"### Your Lab ID: `{st.session_state.user_id}`")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        formula = st.text_input("Formula", "MAPbI3", key="collab_formula")
+    with col2:
+        bandgap = st.number_input("Bandgap (eV)", 0.5, 3.0, 1.55, 0.01, key="collab_bg")
+    with col3:
+        notes = st.text_input("Notes", "High PCE", key="collab_notes")
+    
+    if st.button("📣 Share Discovery", key="collab_share"):
+        discovery = {
+            'lab_id': st.session_state.user_id,
+            'formula': formula,
+            'bandgap': bandgap,
+            'notes': notes,
+            'timestamp': datetime.now().isoformat(),
+            'upvotes': 0
+        }
+        st.session_state.collaborative_discoveries.append(discovery)
+        st.success(f"✅ Shared: {formula}")
+    
+    st.markdown("### 📰 Discovery Feed")
+    if st.session_state.collaborative_discoveries:
+        for i, disc in enumerate(st.session_state.collaborative_discoveries[-10:]):
+            with st.expander(f"{disc['lab_id']}: {disc['formula']} ({disc['timestamp'][:10]})"):
+                st.markdown(f"**Bandgap:** {disc['bandgap']:.3f} eV  \n**Notes:** {disc['notes']}")
+                if st.button("👍 Upvote", key=f"upvote_{i}"):
+                    disc['upvotes'] += 1
+                    st.rerun()
+    else:
+        st.info("No discoveries yet. Be the first to share!")
+
+
+# ═══════════════════════════════════════════════
+# V8 TABS
+# ═══════════════════════════════════════════════
+
+def render_model_zoo(theme, colorblind):
+    """Model Zoo - model registry."""
+    st.header("🏛️ Model Zoo / Foundation Model Hub")
+    st.markdown("**Central registry for trained models with versioning**")
+    
+    try:
+        if 'model_registry' not in st.session_state or st.session_state.model_registry is None:
+            st.session_state.model_registry = ModelRegistry()
+        
+        registry = st.session_state.model_registry
+        
+        st.markdown("### ➕ Register New Model")
+        if st.session_state.get('model_trained', False):
+            col1, col2 = st.columns(2)
+            with col1:
+                model_id = st.text_input("Model ID", "halide-v1", key="zoo_id")
+                model_name = st.text_input("Name", "Halide Predictor", key="zoo_name")
+            with col2:
+                version = st.text_input("Version", "1.0.0", key="zoo_ver")
+                domain = st.selectbox("Domain", ['halide_perovskites', 'oxide_perovskites', 'general'], key="zoo_dom")
+            
+            if st.button("📝 Register", type="primary", key="zoo_reg"):
+                metrics = {'mae': 0.15, 'r2': 0.85, 'rmse': 0.20}
+                card = registry.register_model(
+                    model=st.session_state.ml_model,
+                    model_id=model_id,
+                    name=model_name,
+                    version=version,
+                    family='base',
+                    training_data=st.session_state.combined_data,
+                    features_used=['composition_features'],
+                    target_property='bandgap',
+                    metrics=metrics,
+                    domain=domain
+                )
+                st.success(f"✅ Model {model_id} registered!")
+        else:
+            st.warning("Train a model first")
+        
+        st.markdown("### 📋 Registered Models")
+        models = registry.list_models()
+        if models:
+            models_df = pd.DataFrame([{
+                'ID': m.model_id, 'Name': m.name, 'Version': m.version,
+                'Domain': m.domain, 'MAE': f"{m.mae:.4f}"
+            } for m in models])
+            st.dataframe(models_df, use_container_width=True)
+        else:
+            st.info("No models registered yet")
+    except Exception as e:
+        st.error(f"Model zoo error: {e}")
+
+
+def render_api_mode(theme, colorblind):
+    """API Mode - OpenAPI spec generation."""
+    st.header("🌐 API Mode")
+    st.markdown("**Generate OpenAPI specification for deployment**")
+    
+    try:
+        if 'api_spec_generator' not in st.session_state or st.session_state.api_spec_generator is None:
+            st.session_state.api_spec_generator = APISpecGenerator()
+        
+        gen = st.session_state.api_spec_generator
+        
+        if st.button("🚀 Generate OpenAPI Spec", type="primary", key="api_gen"):
+            with st.spinner("Generating..."):
+                spec = gen.generate_spec()
+                
+                st.success("✅ OpenAPI 3.0 specification generated!")
+                st.json(spec)
+                
+                spec_json = json.dumps(spec, indent=2)
+                st.download_button("📥 Download openapi.json", spec_json,
+                                 "alphamaterials_openapi.json", "application/json")
+        
+        st.markdown("### 🔗 Available Endpoints")
+        endpoints = [
+            {'Method': 'POST', 'Path': '/predict', 'Description': 'Predict bandgap'},
+            {'Method': 'POST', 'Path': '/predict/batch', 'Description': 'Batch prediction'},
+            {'Method': 'GET', 'Path': '/models', 'Description': 'List models'},
+            {'Method': 'GET', 'Path': '/health', 'Description': 'Health check'}
+        ]
+        st.dataframe(pd.DataFrame(endpoints), use_container_width=True)
+    except Exception as e:
+        st.error(f"API mode error: {e}")
+
+
+def render_benchmarks(theme, colorblind):
+    """Benchmarks - standard datasets."""
+    st.header("🏅 Benchmark Suite")
+    st.markdown("**Evaluate models on standard datasets**")
+    
+    try:
+        if 'benchmark_suite' not in st.session_state or st.session_state.benchmark_suite is None:
+            st.session_state.benchmark_suite = BenchmarkSuite()
+        
+        suite = st.session_state.benchmark_suite
+        
+        st.markdown("### 📚 Standard Datasets")
+        datasets = [
+            {'Dataset': 'Castelli Perovskites', 'Materials': '~64', 'Domain': 'Oxides'},
+            {'Dataset': 'JARVIS-DFT', 'Materials': '~27', 'Domain': 'Halides'},
+            {'Dataset': 'Materials Project', 'Materials': '~50', 'Domain': 'Mixed'}
+        ]
+        st.dataframe(pd.DataFrame(datasets), use_container_width=True)
+        
+        if st.session_state.get('model_trained', False):
+            benchmark = st.selectbox("Select Benchmark", ['Castelli Perovskites', 'JARVIS-DFT'], key="bench_sel")
+            
+            if st.button("▶️ Run Benchmark", type="primary", key="bench_run"):
+                with st.spinner(f"Running {benchmark}..."):
+                    featurizer = CompositionFeaturizer()
+                    result = suite.run_benchmark(st.session_state.ml_model, featurizer, benchmark, "current")
+                    
+                    st.success("✅ Benchmark complete!")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("MAE", f"{result.mae:.4f} eV")
+                    with col2:
+                        st.metric("R²", f"{result.r2:.4f}")
+                    with col3:
+                        st.metric("Speed", f"{result.inference_time_ms:.2f} ms")
+        else:
+            st.warning("Train a model first")
+    except Exception as e:
+        st.error(f"Benchmark error: {e}")
+
+
+def render_educational_mode(theme, colorblind):
+    """Educational Mode - tutorials and quizzes."""
+    st.header("🎓 Educational Mode")
+    st.markdown("**Interactive tutorials, glossary, quizzes**")
+    
+    try:
+        st.markdown("### 📖 Tutorials")
+        tutorials = {
+            'Bandgap Basics': TutorialLibrary.get_bandgap_tutorial(),
+            'Bayesian Optimization': TutorialLibrary.get_bayesian_optimization_tutorial(),
+            'Pareto Fronts': TutorialLibrary.get_pareto_front_tutorial()
+        }
+        
+        tut_choice = st.selectbox("Select Tutorial", list(tutorials.keys()), key="edu_tut")
+        tutorial = tutorials[tut_choice]
+        
+        st.markdown(f"**{tutorial.title}**")
+        st.markdown(f"*Difficulty: {tutorial.difficulty} | Duration: {tutorial.duration_min} min*")
+        
+        for section in tutorial.sections:
+            with st.expander(section['title'], expanded=True):
+                st.markdown(section['content'])
+        
+        st.markdown("### 📚 Glossary")
+        search = st.text_input("Search terms", key="edu_search")
+        if search:
+            matches = Glossary.search(search)
+            for term, defn in matches:
+                st.markdown(f"**{term}:** {defn}")
+        else:
+            for term, defn in list(Glossary.TERMS.items())[:5]:
+                st.markdown(f"**{term}:** {defn}")
+    except Exception as e:
+        st.error(f"Educational mode error: {e}")
+
+
+# ═══════════════════════════════════════════════
+# V9 TABS
+# ═══════════════════════════════════════════════
+
+def render_federated_learning(theme, colorblind):
+    """Federated Learning - multi-lab collaboration."""
+    st.header("🤝 Federated Learning Simulator")
+    st.markdown("**Privacy-preserving multi-lab collaboration**")
+    
+    try:
+        st.markdown("### Step 1: Generate Lab Datasets")
+        n_labs = st.slider("Number of Labs", 3, 8, 5, key="fed_nlabs")
+        heterogeneity = st.selectbox("Heterogeneity", ["low", "medium", "high"], index=1, key="fed_het")
+        
+        if st.button("🔄 Generate Lab Data", type="primary", key="fed_gen"):
+            with st.spinner("Generating datasets..."):
+                simulator = LabDataSimulator(n_labs, heterogeneity, random_state=42)
+                lab_datasets = simulator.generate_all_labs(n_features=5)
+                
+                st.session_state.lab_simulator = simulator
+                st.session_state.lab_datasets = lab_datasets
+                
+                st.success(f"✅ Generated data for {n_labs} labs!")
+        
+        if st.session_state.get('lab_datasets'):
+            profiles = st.session_state.lab_simulator.get_lab_profiles_df()
+            st.dataframe(profiles, use_container_width=True)
+            
+            st.markdown("### Step 2: Train Federated Model")
+            n_rounds = st.slider("Communication Rounds", 5, 30, 10, key="fed_rounds")
+            
+            if st.button("🚀 Train Federated", type="primary", key="fed_train"):
+                with st.spinner("Training federated model..."):
+                    X_all, y_all = generate_centralized_dataset(st.session_state.lab_datasets)
+                    split = int(len(y_all) * 0.8)
+                    X_test, y_test = X_all[split:], y_all[split:]
+                    
+                    fed_learner = FederatedLearner(model_type="random_forest")
+                    rounds = fed_learner.train_federated(
+                        st.session_state.lab_datasets,
+                        (X_test, y_test),
+                        n_rounds=n_rounds
+                    )
+                    
+                    st.session_state.federated_rounds = rounds
+                    
+                    st.success(f"✅ Training complete! Final MAE: {rounds[-1].global_mae:.3f} eV")
+                    
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=[r.round_num for r in rounds],
+                        y=[r.global_mae for r in rounds],
+                        mode='lines+markers',
+                        name='Global MAE'
+                    ))
+                    fig.update_layout(
+                        title="Federated Learning Convergence",
+                        xaxis_title="Round",
+                        yaxis_title="MAE (eV)",
+                        template="plotly_white"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Federated learning error: {e}")
+
+
+def render_privacy_preserving(theme, colorblind):
+    """Privacy-Preserving - differential privacy."""
+    st.header("🔒 Privacy-Preserving Predictions")
+    st.markdown("**Differential Privacy (DP): Privacy vs Accuracy tradeoff**")
+    
+    try:
+        if not st.session_state.get('lab_datasets'):
+            st.warning("Generate lab data first (Federated Learning tab)")
+            return
+        
+        if st.button("🔍 Analyze Privacy-Accuracy Tradeoff", type="primary", key="priv_analyze"):
+            with st.spinner("Training models with different privacy budgets..."):
+                X_all, y_all = generate_centralized_dataset(st.session_state.lab_datasets)
+                split = int(len(y_all) * 0.8)
+                
+                epsilon_values = [0.1, 0.5, 1.0, 2.0, 5.0, float('inf')]
+                results = analyze_privacy_accuracy_tradeoff(
+                    st.session_state.lab_datasets,
+                    (X_all[split:], y_all[split:]),
+                    epsilon_values=epsilon_values,
+                    n_rounds=5
+                )
+                
+                st.success("✅ Analysis complete!")
+                
+                fig = go.Figure()
+                epsilons_plot = [100 if e == float('inf') else e for e in [r['epsilon'] for r in results]]
+                maes = [r['final_mae'] for r in results]
+                
+                fig.add_trace(go.Scatter(
+                    x=epsilons_plot, y=maes,
+                    mode='lines+markers',
+                    marker=dict(size=12)
+                ))
+                fig.update_layout(
+                    title="Privacy-Accuracy Tradeoff",
+                    xaxis_title="Privacy Budget (ε) — Lower = More Private",
+                    yaxis_title="MAE (eV)",
+                    xaxis_type="log",
+                    template="plotly_white"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                results_df = pd.DataFrame([{
+                    'ε': '∞' if r['epsilon'] == float('inf') else f"{r['epsilon']:.1f}",
+                    'MAE': f"{r['final_mae']:.3f}",
+                    'R²': f"{r['final_r2']:.3f}"
+                } for r in results])
+                st.dataframe(results_df, use_container_width=True)
+    except Exception as e:
+        st.error(f"Privacy analysis error: {e}")
+
+
+def render_multi_lab_dashboard(theme, colorblind):
+    """Multi-Lab Dashboard - contribution tracking."""
+    st.header("🏆 Multi-Lab Discovery Dashboard")
+    st.markdown("**Track contributions from each lab**")
+    
+    try:
+        if not (st.session_state.get('lab_datasets') and st.session_state.get('federated_rounds')):
+            st.warning("Run federated learning first")
+            return
+        
+        X_all, y_all = generate_centralized_dataset(st.session_state.lab_datasets)
+        split = int(len(y_all) * 0.8)
+        
+        mechanism = IncentiveMechanism(
+            st.session_state.lab_datasets,
+            (X_all[split:], y_all[split:]),
+            baseline_mae=st.session_state.federated_rounds[-1].global_mae
+        )
+        
+        if st.button("📊 Compute Contributions", type="primary", key="mlab_compute"):
+            with st.spinner("Computing Shapley values..."):
+                scores = mechanism.compute_contribution_scores(use_shapley=True)
+                
+                st.success("✅ Contributions computed!")
+                
+                leaderboard = []
+                for rank, score in enumerate(scores, 1):
+                    medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else ""))
+                    leaderboard.append({
+                        'Rank': f"{medal} {rank}",
+                        'Lab': score.lab_id.replace('_', ' ').title(),
+                        'Shapley Value': f"{score.shapley_value:.4f}",
+                        'Data Size': score.data_size
+                    })
+                
+                st.dataframe(pd.DataFrame(leaderboard), use_container_width=True)
+                
+                fig = px.bar(
+                    pd.DataFrame(leaderboard),
+                    x='Lab', y=[float(s['Shapley Value']) for s in leaderboard],
+                    title="Lab Contributions"
+                )
+                fig.update_layout(template="plotly_white")
+                st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Multi-lab dashboard error: {e}")
+
+
+def render_data_heterogeneity(theme, colorblind):
+    """Data Heterogeneity - non-IID analysis."""
+    st.header("📊 Data Heterogeneity Analysis")
+    st.markdown("**Measure distribution differences (non-IID metrics)**")
+    
+    try:
+        if not st.session_state.get('lab_datasets'):
+            st.warning("Generate lab data first (Federated Learning tab)")
+            return
+        
+        simulator = st.session_state.lab_simulator
+        metrics = simulator.compute_heterogeneity_metrics(st.session_state.lab_datasets)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Avg KL Divergence", f"{metrics['avg_kl_divergence']:.3f}")
+        with col2:
+            st.metric("Max KL Divergence", f"{metrics['max_kl_divergence']:.3f}")
+        with col3:
+            st.metric("Heterogeneity", metrics['heterogeneity_level'].capitalize())
+        
+        st.markdown("### Distribution Visualization")
+        fig = go.Figure()
+        
+        for lab_id, (X, y) in st.session_state.lab_datasets.items():
+            lab_name = [lab.name for lab in simulator.labs if lab.lab_id == lab_id][0]
+            fig.add_trace(go.Box(y=y, name=lab_name))
+        
+        fig.update_layout(
+            title="Bandgap Distribution by Lab",
+            yaxis_title="Bandgap (eV)",
+            template="plotly_white"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Heterogeneity analysis error: {e}")
+
+
+def render_incentive_mechanism(theme, colorblind):
+    """Incentive Mechanism - fair credit allocation."""
+    st.header("💡 Incentive Mechanism")
+    st.markdown("**Fair credit via Shapley values**")
+    
+    st.info("""
+    **Shapley Values** answer:
+    - "How much did each lab contribute to the global model?"
+    - "Is collaboration worth it for me?"
+    - Fair cost/reward sharing
     """)
     
-    # Show module status
-    module_map = {
-        "Digital Twin": "digital_twin",
-        "Autonomous Scheduler": "auto_scheduler",
-        "Transfer Learning": "transfer_learning",
-        "What-If Scenarios": "scenario_engine",
-        "Model Zoo": "model_zoo",
-        "API Mode": "api_generator",
-        "Benchmarks": "benchmarks",
-        "Educational Mode": "education",
-        "Federated Learning": "federated",
-        "Privacy-Preserving": "federated",
-        "Natural Language Query": "nl_query",
-        "Research Report": "report_generator",
-        "Synthesis Protocol": "protocol_generator",
-        "Knowledge Graph": "knowledge_graph",
-        "Decision Matrix": "decision_matrix",
-    }
-    
-    clean_name = tab_name.split(" ", 1)[-1] if " " in tab_name else tab_name
-    if clean_name in module_map:
-        mod = module_map[clean_name]
+    if st.button("🧪 Demonstrate Fairness Properties", key="inc_demo"):
         try:
-            __import__(mod)
-            st.success(f"✅ Module `{mod}` loaded successfully")
-        except ImportError:
-            st.error(f"❌ Module `{mod}` not found")
+            report = demonstrate_fairness_properties()
+            
+            st.markdown("### 📊 Fairness Properties")
+            st.markdown(report['explanation'])
+            
+            for prop, result in report['properties'].items():
+                status = "✅" if result['satisfied'] else "❌"
+                st.markdown(f"**{prop}:** {status}")
+                st.caption(result['explanation'])
+        except Exception as e:
+            st.error(f"Demo error: {e}")
+
+
+# ═══════════════════════════════════════════════
+# V10 TABS
+# ═══════════════════════════════════════════════
+
+def render_natural_language(theme, colorblind):
+    """Natural Language Query - NL interface."""
+    st.header("💬 Natural Language Query")
+    st.markdown("**Ask questions in plain English**")
+    
+    try:
+        if 'nl_parser' not in st.session_state:
+            st.session_state.nl_parser = NaturalLanguageParser()
+        
+        parser = st.session_state.nl_parser
+        
+        query = st.text_area(
+            "Enter your query:",
+            "What is the bandgap of MAPbI3?",
+            key="nl_query"
+        )
+        
+        if st.button("🔍 Parse Query", type="primary", key="nl_parse"):
+            with st.spinner("Parsing..."):
+                parsed = parser.parse(query)
+                
+                st.success("✅ Query parsed!")
+                
+                st.markdown(f"**Intent:** {parsed.intent}")
+                st.markdown(f"**Entities:** {parsed.entities}")
+                st.markdown(f"**Confidence:** {parsed.confidence:.2f}")
+                
+                if parsed.executable:
+                    st.info(f"**Action:** {parsed.action_plan}")
+                else:
+                    st.warning("Query not executable. Try rephrasing.")
+    except Exception as e:
+        st.error(f"NL query error: {e}")
+
+
+def render_research_report(theme, colorblind):
+    """Research Report - auto-generate papers."""
+    st.header("📝 Automated Research Report Generator")
+    st.markdown("**Generate journal/internal/presentation reports**")
+    
+    try:
+        report_type = st.selectbox("Report Type", ['journal', 'internal', 'presentation'], key="report_type")
+        
+        if st.button("📄 Generate Report", type="primary", key="report_gen"):
+            with st.spinner("Generating report..."):
+                result = demonstrate_report_generation(report_type)
+                
+                st.success("✅ Report generated!")
+                
+                st.markdown("### Report Preview")
+                st.markdown(result['report_md'][:1000] + "...")
+                
+                st.download_button(
+                    "📥 Download Full Report",
+                    result['report_md'],
+                    f"research_report_{report_type}.md",
+                    "text/markdown"
+                )
+                
+                if 'figures' in result:
+                    st.markdown(f"**Figures generated:** {len(result['figures'])}")
+    except Exception as e:
+        st.error(f"Report generation error: {e}")
+
+
+def render_synthesis_protocol(theme, colorblind):
+    """Synthesis Protocol - lab procedures."""
+    st.header("🧪 Synthesis Protocol Generator")
+    st.markdown("**Step-by-step lab procedures**")
+    
+    try:
+        formula = st.text_input("Target Composition", "MAPbI3", key="protocol_formula")
+        method = st.selectbox("Synthesis Method", 
+                             ['spin_coating', 'doctor_blade', 'vapor_deposition'],
+                             key="protocol_method")
+        
+        if st.button("🧪 Generate Protocol", type="primary", key="protocol_gen"):
+            with st.spinner("Generating protocol..."):
+                result = demonstrate_protocol_generation(formula, method)
+                
+                st.success("✅ Protocol generated!")
+                
+                st.markdown("### Synthesis Steps")
+                for step in result['protocol']['steps']:
+                    st.markdown(f"**{step['step']}.** {step['description']}")
+                    st.caption(f"Duration: {step['duration']} | Temp: {step['temperature']}")
+                
+                st.markdown("### Safety Warnings")
+                for warning in result['protocol']['safety_warnings']:
+                    st.warning(warning)
+    except Exception as e:
+        st.error(f"Protocol generation error: {e}")
+
+
+def render_knowledge_graph(theme, colorblind):
+    """Knowledge Graph - relationship visualization."""
+    st.header("🕸️ Knowledge Graph")
+    st.markdown("**Composition → Property → Process relationships**")
+    
+    try:
+        if st.button("🕸️ Build Knowledge Graph", type="primary", key="kg_build"):
+            with st.spinner("Building knowledge graph..."):
+                result = demonstrate_knowledge_graph()
+                
+                st.success("✅ Knowledge graph built!")
+                
+                stats = result['statistics']
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Nodes", stats['total_nodes'])
+                with col2:
+                    st.metric("Edges", stats['total_edges'])
+                with col3:
+                    st.metric("Communities", stats.get('communities', 0))
+                
+                st.markdown("### Sample Relationships")
+                for rel in result['sample_relationships'][:5]:
+                    st.markdown(f"- {rel['source']} → **{rel['relationship']}** → {rel['target']}")
+    except Exception as e:
+        st.error(f"Knowledge graph error: {e}")
+
+
+def render_decision_matrix(theme, colorblind):
+    """Decision Matrix - multi-criteria analysis."""
+    st.header("⚖️ Decision Matrix (TOPSIS)")
+    st.markdown("**Multi-criteria decision analysis**")
+    
+    try:
+        if st.button("⚖️ Run Decision Analysis", type="primary", key="dm_run"):
+            with st.spinner("Running TOPSIS analysis..."):
+                result = demonstrate_decision_analysis()
+                
+                st.success("✅ Analysis complete!")
+                
+                st.markdown("### Ranking")
+                for i, alt in enumerate(result['ranking'], 1):
+                    st.markdown(f"{i}. **{alt['alternative']}** (Score: {alt['score']:.3f})")
+                
+                if 'sensitivity' in result:
+                    st.markdown("### Sensitivity Analysis")
+                    st.info(result['sensitivity']['interpretation'])
+    except Exception as e:
+        st.error(f"Decision matrix error: {e}")
 
 
 # ═══════════════════════════════════════════════
@@ -1275,23 +1997,51 @@ def main():
     elif selected == "📊 Campaign Dashboard":
         render_campaign_dashboard(theme, colorblind)
     
-    # V7-V10 tabs (placeholder with module check)
-    else:
-        version_map = {
-            "🏭 Digital Twin": "V7", "🤖 Autonomous Scheduler": "V7",
-            "🔄 Transfer Learning": "V7", "🌍 What-If Scenarios": "V7",
-            "👥 Collaborative Discovery": "V7",
-            "🏛️ Model Zoo": "V8", "🌐 API Mode": "V8",
-            "🏅 Benchmarks": "V8", "🎓 Educational Mode": "V8",
-            "🤝 Federated Learning": "V9", "🔒 Privacy-Preserving": "V9",
-            "🏆 Multi-Lab Dashboard": "V9", "📊 Data Heterogeneity": "V9",
-            "💡 Incentive Mechanism": "V9",
-            "💬 Natural Language Query": "V10", "📝 Research Report": "V10",
-            "🧪 Synthesis Protocol": "V10", "🕸️ Knowledge Graph": "V10",
-            "⚖️ Decision Matrix": "V10",
-        }
-        version = version_map.get(selected, "V10")
-        render_placeholder(selected, version)
+    # V7 tabs
+    elif selected == "🏭 Digital Twin":
+        render_digital_twin(theme, colorblind)
+    elif selected == "🤖 Autonomous Scheduler":
+        render_autonomous_scheduler(theme, colorblind)
+    elif selected == "🔄 Transfer Learning":
+        render_transfer_learning(theme, colorblind)
+    elif selected == "🌍 What-If Scenarios":
+        render_what_if_scenarios(theme, colorblind)
+    elif selected == "👥 Collaborative Discovery":
+        render_collaborative_discovery(theme, colorblind)
+    
+    # V8 tabs
+    elif selected == "🏛️ Model Zoo":
+        render_model_zoo(theme, colorblind)
+    elif selected == "🌐 API Mode":
+        render_api_mode(theme, colorblind)
+    elif selected == "🏅 Benchmarks":
+        render_benchmarks(theme, colorblind)
+    elif selected == "🎓 Educational Mode":
+        render_educational_mode(theme, colorblind)
+    
+    # V9 tabs
+    elif selected == "🤝 Federated Learning":
+        render_federated_learning(theme, colorblind)
+    elif selected == "🔒 Privacy-Preserving":
+        render_privacy_preserving(theme, colorblind)
+    elif selected == "🏆 Multi-Lab Dashboard":
+        render_multi_lab_dashboard(theme, colorblind)
+    elif selected == "📊 Data Heterogeneity":
+        render_data_heterogeneity(theme, colorblind)
+    elif selected == "💡 Incentive Mechanism":
+        render_incentive_mechanism(theme, colorblind)
+    
+    # V10 tabs
+    elif selected == "💬 Natural Language Query":
+        render_natural_language(theme, colorblind)
+    elif selected == "📝 Research Report":
+        render_research_report(theme, colorblind)
+    elif selected == "🧪 Synthesis Protocol":
+        render_synthesis_protocol(theme, colorblind)
+    elif selected == "🕸️ Knowledge Graph":
+        render_knowledge_graph(theme, colorblind)
+    elif selected == "⚖️ Decision Matrix":
+        render_decision_matrix(theme, colorblind)
 
 
 if __name__ == "__main__":
