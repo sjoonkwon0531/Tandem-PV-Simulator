@@ -96,34 +96,33 @@ except ImportError as e:
     IMPORTS_OK = False
     IMPORT_ERROR = str(e)
 
-# Theme imports with robust fallback
-try:
-    from themes import get_theme, apply_theme, generate_css, THEMES, COLORBLIND_SAFE, get_chart_colors
-    THEMES_OK = True
-except Exception:
-    THEMES_OK = False
-    from dataclasses import dataclass, field
-    @dataclass
-    class ThemeConfig:
-        name: str = "dark"
-        bg_primary: str = "#0a0e1a"
-        bg_secondary: str = "#1a1f2e"
-        bg_card: str = "#141824"
-        text_primary: str = "#e0e0e0"
-        text_secondary: str = "#a0a0a0"
-        accent: str = "#00d4aa"
-        accent_secondary: str = "#0088cc"
-        success: str = "#00c853"
-        warning: str = "#ffd600"
-        error: str = "#ff1744"
-        border: str = "#2a2f3e"
-        chart_colors: list = field(default_factory=lambda: ["#00d4aa","#0088cc","#ff6b6b","#ffd93d"])
-    _DEFAULT_THEME = ThemeConfig()
-    THEMES = {"dark": _DEFAULT_THEME, "light": _DEFAULT_THEME, "high_contrast": _DEFAULT_THEME}
-    COLORBLIND_SAFE = ["#E69F00","#56B4E9","#009E73","#F0E442","#0072B2","#D55E00","#CC79A7"]
-    def get_theme(name="dark"): return THEMES.get(name, _DEFAULT_THEME)
-    def generate_css(theme, font_size=14): return ""
-    def get_chart_colors(colorblind_safe=False): return COLORBLIND_SAFE if colorblind_safe else _DEFAULT_THEME.chart_colors
+# ═══════════════════════════════════════════════
+# INLINE THEME SYSTEM (no external import needed)
+# ═══════════════════════════════════════════════
+class ThemeConfig:
+    def __init__(self, name="dark", accent="#00d4aa"):
+        self.name = name
+        self.accent = accent
+        self.bg_primary = "#0a0e1a" if name != "light" else "#ffffff"
+        self.bg_secondary = "#1a1f2e" if name != "light" else "#f5f7fa"
+        self.text_primary = "#e0e0e0" if name != "light" else "#1a1a2e"
+        self.chart_colors = ["#00d4aa","#0088cc","#ff6b6b","#ffd93d","#6c5ce7"]
+
+_THEMES = {
+    "dark": ThemeConfig("dark", "#00d4aa"),
+    "light": ThemeConfig("light", "#028090"),
+    "high_contrast": ThemeConfig("high_contrast", "#00ff88"),
+}
+COLORBLIND_SAFE = ["#E69F00","#56B4E9","#009E73","#F0E442","#0072B2","#D55E00","#CC79A7"]
+
+def get_theme(name="dark"):
+    return _THEMES.get(name, _THEMES["dark"])
+
+def generate_css(theme, font_size=14):
+    return f"<style>.stMarkdown p {{ font-size: {font_size}px; }}</style>"
+
+def get_chart_colors(colorblind_safe=False):
+    return COLORBLIND_SAFE if colorblind_safe else _THEMES["dark"].chart_colors
 
 
 # ═══════════════════════════════════════════════
