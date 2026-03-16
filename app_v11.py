@@ -135,6 +135,30 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ═══════════════════════════════════════════════
+# SESSION STATE INITIALIZATION
+# ═══════════════════════════════════════════════
+def init_session_state():
+    """Initialize all session state variables."""
+    defaults = {
+        'db_client': None,
+        'db_data': None,
+        'user_data': None,
+        'combined_data': None,
+        'ml_model': None,
+        'model_trained': False,
+        'db_loaded': False,
+        'bo_optimizer': None,
+        'bo_results': None,
+        'mo_results': None,
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+init_session_state()
+
 
 # ═══════════════════════════════════════════════
 # THEME & ACCESSIBILITY (V11)
@@ -633,40 +657,571 @@ def render_about_credits(theme):
 
 
 # ═══════════════════════════════════════════════
-# PLACEHOLDER FOR V4-V10 TABS
+# RENDER FUNCTIONS FOR ALL TABS
 # ═══════════════════════════════════════════════
+
+def render_database_explorer(theme, colorblind):
+    """Database Explorer - load and browse perovskite databases."""
+    st.header("📂 Database Explorer")
+    st.markdown("**Real-time access to Materials Project, AFLOW, JARVIS-DFT perovskite databases**")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        if st.button("🚀 Load Database", type="primary", key="load_db"):
+            with st.spinner("Fetching data from databases..."):
+                try:
+                    db_client = UnifiedDBClient()
+                    db_data = db_client.get_all_perovskites(max_per_source=200, use_cache=True)
+                    
+                    if db_data.empty:
+                        st.warning("No API data. Loading sample data...")
+                        db_data = pd.DataFrame({
+                            'formula': ['MAPbI3', 'FAPbI3', 'CsPbI3', 'MAPbBr3', 'FAPbBr3'],
+                            'bandgap': [1.59, 1.51, 1.72, 2.30, 2.25],
+                            'source': ['sample'] * 5
+                        })
+                    
+                    st.session_state.db_data = db_data
+                    st.session_state.combined_data = db_data.copy()
+                    st.session_state.db_loaded = True
+                    
+                    st.success(f"✅ Loaded {len(db_data)} materials!")
+                    
+                except Exception as e:
+                    st.error(f"Database load failed: {e}")
+    
+    with col2:
+        st.info("**빈 지도가 탐험의 시작**\n\nThe empty map is the start of exploration")
+    
+    # Display database if loaded
+    if 'db_data' in st.session_state and st.session_state.db_data is not None:
+        df = st.session_state.db_data
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Materials", len(df))
+        with col2:
+            if 'bandgap' in df.columns:
+                st.metric("Bandgap Range", f"{df['bandgap'].min():.2f} - {df['bandgap'].max():.2f} eV")
+        with col3:
+            if 'source' in df.columns:
+                st.metric("Data Sources", df['source'].nunique())
+        
+        # Bandgap distribution
+        if 'bandgap' in df.columns:
+            fig = px.histogram(df, x='bandgap', nbins=30, color='source' if 'source' in df.columns else None,
+                             title="Bandgap Distribution")
+            fig.update_layout(template="plotly_white", height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        st.dataframe(df.head(100), use_container_width=True)
+
+
+def render_user_data_upload(theme, colorblind):
+    """User Data Upload - parse and merge experimental data."""
+    st.header("📤 User Data Upload")
+    st.markdown("**Upload your experimental data (CSV/Excel)**")
+    
+    uploaded_file = st.file_uploader("Choose file", type=['csv', 'xlsx'], key="upload_user_data")
+    
+    if uploaded_file:
+        try:
+            parser = UserDataParser()
+            file_content = uploaded_file.read()
+            df_user = parser.parse(file_content, uploaded_file.name)
+            
+            if not df_user.empty:
+                st.success(f"✅ Parsed {len(df_user)} materials")
+                st.dataframe(df_user, use_container_width=True)
+                
+                if st.button("💾 Save to Session", type="primary", key="save_user"):
+                    if 'db_data' in st.session_state and st.session_state.db_data is not None:
+                        st.session_state.user_data = df_user
+                        st.session_state.combined_data = parser.merge_with_db(df_user, st.session_state.db_data)
+                        st.success("✅ Data saved!")
+                    else:
+                        st.error("Please load database first")
+        except Exception as e:
+            st.error(f"Upload error: {e}")
+
+
+def render_ml_surrogate(theme, colorblind):
+    """ML Surrogate Model - train XGBoost bandgap predictor."""
+    st.header("🧠 ML Surrogate Model")
+    st.markdown("**XGBoost bandgap predictor trained on database**")
+    
+    if 'combined_data' not in st.session_state or st.session_state.combined_data is None:
+        st.info("💡 Load database first (Tab 1)")
+        return
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        if st.button("🚀 Train Model", type="primary", key="train_ml"):
+            with st.spinner("Training XGBoost..."):
+                try:
+                    df_train = st.session_state.combined_data
+                    df_train = df_train[df_train['bandgap'].notna() & (df_train['bandgap'] > 0)]
+                    
+                    model = BandgapPredictor(use_xgboost=True)
+                    metrics = model.train(df_train, formula_col='formula', target_col='bandgap')
+                    
+                    st.session_state.ml_model = model
+                    st.session_state.model_trained = True
+                    
+                    st.success("✅ Model trained!")
+                    
+                    col_a, col_b, col_c = st.columns(3)
+                    with col_a:
+                        st.metric("Samples", metrics.get('n_samples', 0))
+                    with col_b:
+                        st.metric("CV MAE", f"{metrics.get('cv_mae', 0):.3f} eV")
+                    with col_c:
+                        st.metric("R²", f"{metrics.get('train_r2', 0):.3f}")
+                    
+                    # Feature importance
+                    if hasattr(model, 'get_feature_importance'):
+                        importance_df = model.get_feature_importance()
+                        fig = px.bar(importance_df.head(10), x='importance', y='feature', orientation='h',
+                                   title="Top 10 Feature Importances")
+                        fig.update_layout(template="plotly_white", height=400)
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                except Exception as e:
+                    st.error(f"Training failed: {e}")
+    
+    with col2:
+        if 'model_trained' in st.session_state and st.session_state.model_trained:
+            st.success("**Model Ready!**")
+        else:
+            st.info("Train model to enable predictions")
+    
+    # Prediction interface
+    if 'model_trained' in st.session_state and st.session_state.model_trained:
+        st.markdown("---")
+        st.markdown("### 🔮 Make Predictions")
+        
+        formula_input = st.text_input("Enter formula", "MAPbI3", key="ml_predict_formula")
+        
+        if st.button("🎯 Predict", key="ml_predict_btn"):
+            try:
+                model = st.session_state.ml_model
+                predictions, uncertainties = model.predict([formula_input], return_uncertainty=True)
+                
+                st.markdown(f"**Predicted Bandgap:** {predictions[0]:.3f} ± {uncertainties[0] if uncertainties else 0:.3f} eV")
+            except Exception as e:
+                st.error(f"Prediction failed: {e}")
+
+
+def render_bayesian_optimization(theme, colorblind):
+    """Bayesian Optimization - suggest next experiments."""
+    st.header("🎯 Bayesian Optimization")
+    st.markdown("**AI suggests your next experiments**")
+    
+    if not ('model_trained' in st.session_state and st.session_state.model_trained):
+        st.info("💡 Train model first (Tab: ML Surrogate)")
+        return
+    
+    target_bandgap = st.number_input("Target Bandgap (eV)", 0.5, 3.0, 1.35, 0.01, key="bo_target")
+    
+    if st.button("🚀 Run Bayesian Optimization", type="primary", key="run_bo"):
+        with st.spinner("Running BO..."):
+            try:
+                bo = BayesianOptimizer(target_bandgap=target_bandgap, acq_function='ei')
+                
+                # Fit on available data
+                if 'user_data' in st.session_state and st.session_state.user_data is not None:
+                    bo.fit(st.session_state.user_data, formula_col='formula', target_col='bandgap')
+                else:
+                    bo.fit(st.session_state.combined_data.head(50), formula_col='formula', target_col='bandgap')
+                
+                # Generate suggestions
+                search_space = {'A': ['MA', 'FA', 'Cs'], 'B': ['Pb', 'Sn'], 'X': ['I', 'Br', 'Cl']}
+                suggestions = bo.optimize_composition(search_space=search_space, n_samples=500)
+                
+                st.session_state.bo_results = suggestions
+                
+                st.success("✅ BO complete!")
+                
+                # Display top suggestions
+                st.markdown("### 🏆 Top Suggestions")
+                display_cols = ['rank', 'formula', 'predicted_bandgap', 'uncertainty', 'acquisition_value']
+                st.dataframe(suggestions[display_cols].head(10), use_container_width=True)
+                
+                # Acquisition landscape
+                fig = go.Figure()
+                sample = suggestions.head(100)
+                fig.add_trace(go.Scatter(
+                    x=sample['predicted_bandgap'],
+                    y=sample['acquisition_value'],
+                    mode='markers',
+                    marker=dict(size=8, color=sample['uncertainty'], colorscale='Viridis', showscale=True),
+                    text=sample['formula'],
+                    hovertemplate='<b>%{text}</b><br>Bandgap: %{x:.2f}<br>Acquisition: %{y:.3f}<extra></extra>'
+                ))
+                fig.update_layout(template="plotly_white", title="Acquisition Function Landscape",
+                                xaxis_title="Predicted Bandgap (eV)", yaxis_title="Acquisition Value", height=400)
+                st.plotly_chart(fig, use_container_width=True)
+                
+            except Exception as e:
+                st.error(f"BO failed: {e}")
+
+
+def render_multi_objective(theme, colorblind):
+    """Multi-Objective Pareto optimization."""
+    st.header("🏆 Multi-Objective Pareto")
+    st.markdown("**Optimize bandgap + stability + cost + synthesizability**")
+    
+    if not ('model_trained' in st.session_state and st.session_state.model_trained):
+        st.info("💡 Train model first")
+        return
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        w_bg = st.slider("Bandgap", 0.0, 1.0, 0.4, 0.05, key="mo_w_bg")
+    with col2:
+        w_stab = st.slider("Stability", 0.0, 1.0, 0.3, 0.05, key="mo_w_stab")
+    with col3:
+        w_synth = st.slider("Synthesizability", 0.0, 1.0, 0.2, 0.05, key="mo_w_synth")
+    with col4:
+        w_cost = st.slider("Cost", 0.0, 1.0, 0.1, 0.05, key="mo_w_cost")
+    
+    target_bandgap = st.number_input("Target Bandgap (eV)", 0.5, 3.0, 1.35, 0.01, key="mo_target")
+    
+    if st.button("🎯 Optimize", type="primary", key="mo_optimize"):
+        with st.spinner("Evaluating multi-objective..."):
+            try:
+                mo = MultiObjectiveOptimizer(target_bandgap=target_bandgap)
+                
+                # Get candidates
+                if 'bo_results' in st.session_state:
+                    candidates = st.session_state.bo_results['formula'].head(100).tolist()
+                    bandgaps = st.session_state.bo_results['predicted_bandgap'].head(100).values
+                else:
+                    candidates = ['MAPbI3', 'FAPbI3', 'CsPbI3', 'MA0.5FA0.5PbI3']
+                    bandgaps, _ = st.session_state.ml_model.predict(candidates)
+                
+                obj_df = mo.evaluate_objectives(candidates, bandgaps)
+                pareto_df = mo.calculate_pareto_front(obj_df, 
+                    ['obj_bandgap_match', 'obj_stability', 'obj_synthesizability', 'obj_cost'])
+                
+                st.success(f"✅ Found {len(pareto_df)} Pareto-optimal materials!")
+                
+                st.dataframe(pareto_df[['formula', 'bandgap', 'obj_bandgap_match', 'obj_stability']].head(10),
+                           use_container_width=True)
+                
+                # 2D Pareto front
+                fig = mo.plot_pareto_front_2d(obj_df, 'obj_bandgap_match', 'obj_stability', pareto_df)
+                fig.update_layout(template="plotly_white")
+                st.plotly_chart(fig, use_container_width=True)
+                
+            except Exception as e:
+                st.error(f"MO optimization failed: {e}")
+
+
+def render_experiment_planner(theme, colorblind):
+    """Experiment Planner - prioritized queue."""
+    st.header("📋 Experiment Planner")
+    st.markdown("**Prioritized experiment queue from BO + MO results**")
+    
+    if 'bo_results' not in st.session_state:
+        st.info("💡 Run Bayesian Optimization first to generate suggestions")
+    else:
+        queue = st.session_state.bo_results.head(10)
+        st.markdown(f"### 🧪 Experiment Queue ({len(queue)} experiments)")
+        
+        st.dataframe(queue[['rank', 'formula', 'predicted_bandgap', 'uncertainty']], 
+                   use_container_width=True)
+        
+        csv = queue.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Queue (CSV)", csv, "experiment_queue.csv", "text/csv")
+
+
+def render_session_management(theme, colorblind):
+    """Session Management - save/load discovery sessions."""
+    st.header("💾 Session Management")
+    st.markdown("**Save your discovery journey and resume later**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 💾 Save Session")
+        session_name = st.text_input("Session Name", f"session_{datetime.now().strftime('%Y%m%d')}", key="sess_name")
+        
+        if st.button("💾 Save", type="primary", key="sess_save"):
+            try:
+                session_mgr = SessionManager()
+                session_data = {
+                    'db_data': st.session_state.get('db_data'),
+                    'user_data': st.session_state.get('user_data'),
+                    'ml_model': st.session_state.get('ml_model'),
+                    'bo_results': st.session_state.get('bo_results')
+                }
+                
+                session_path = session_mgr.save_session(session_data, session_name)
+                st.success(f"✅ Session saved to: {session_path}")
+            except Exception as e:
+                st.error(f"Save failed: {e}")
+    
+    with col2:
+        st.markdown("### 📂 Load Session")
+        try:
+            session_mgr = SessionManager()
+            sessions_df = session_mgr.list_sessions()
+            
+            if not sessions_df.empty:
+                selected = st.selectbox("Select session", sessions_df['session_name'].tolist(), key="sess_select")
+                
+                if st.button("📂 Load", key="sess_load"):
+                    session_data = session_mgr.load_session(selected)
+                    
+                    for key, value in session_data.items():
+                        st.session_state[key] = value
+                    
+                    st.success("✅ Session loaded!")
+                    st.rerun()
+            else:
+                st.info("No saved sessions")
+        except Exception as e:
+            st.error(f"Load failed: {e}")
+
+
+def render_inverse_design(theme, colorblind):
+    """Inverse Design - target properties → candidates."""
+    st.header("🧬 Inverse Design")
+    st.markdown("**Specify target properties → AI generates candidates**")
+    
+    if not ('model_trained' in st.session_state and st.session_state.model_trained):
+        st.info("💡 Train model first")
+        return
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        target_bg = st.number_input("Target Bandgap (eV)", 0.5, 3.0, 1.35, 0.01, key="inv_bg")
+    with col2:
+        tolerance = st.number_input("Tolerance (±eV)", 0.01, 0.5, 0.05, 0.01, key="inv_tol")
+    with col3:
+        min_stability = st.slider("Min Stability", 0.0, 1.0, 0.85, 0.05, key="inv_stab")
+    
+    if st.button("🚀 Generate Candidates", type="primary", key="inv_gen"):
+        with st.spinner("Generating candidates..."):
+            try:
+                gp_model = st.session_state.get('bo_optimizer').gp if 'bo_optimizer' in st.session_state else None
+                featurizer = CompositionFeaturizer()
+                
+                engine = InverseDesignEngine(gp_model, featurizer)
+                candidates = engine.generate_candidates(
+                    target_bandgap=target_bg,
+                    bandgap_tolerance=tolerance,
+                    min_stability=min_stability,
+                    n_candidates=500,
+                    method='rejection'
+                )
+                
+                if not candidates.empty:
+                    st.success(f"✅ Found {len(candidates)} candidates!")
+                    st.dataframe(candidates[['rank', 'formula', 'predicted_bandgap', 'stability_score', 'feasibility_score']].head(20),
+                               use_container_width=True)
+                    
+                    # Scatter plot
+                    fig = px.scatter(candidates.head(100), x='predicted_bandgap', y='stability_score',
+                                   color='feasibility_score', hover_data=['formula'],
+                                   title="Candidate Space")
+                    fig.update_layout(template="plotly_white", height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("No candidates found. Relax constraints.")
+            except Exception as e:
+                st.error(f"Inverse design failed: {e}")
+
+
+def render_techno_economics(theme, colorblind):
+    """Techno-Economics - cost analysis."""
+    st.header("💰 Techno-Economics")
+    st.markdown("**Manufacturing cost, $/Watt, supply chain risk**")
+    
+    formula = st.text_input("Composition", "MAPbI3", key="te_formula")
+    efficiency = st.slider("Efficiency", 0.05, 0.30, 0.20, 0.01, key="te_eff")
+    
+    if st.button("💰 Calculate Cost", type="primary", key="te_calc"):
+        try:
+            analyzer = TechnoEconomicAnalyzer()
+            
+            cost_data = analyzer.calculate_cost_per_watt(formula, efficiency)
+            mat_cost = analyzer.calculate_material_cost(formula)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("$/Watt", f"${cost_data['cost_per_watt']:.3f}")
+            with col2:
+                st.metric("Material Cost ($/kg)", f"${mat_cost['cost_per_kg']:.2f}")
+            with col3:
+                competitive = "✅ Yes" if cost_data['competitive'] else "❌ No"
+                st.metric("Competitive vs Silicon", competitive)
+            
+            # Cost waterfall
+            fig_waterfall = analyzer.plot_cost_waterfall(formula, efficiency)
+            fig_waterfall.update_layout(template="plotly_white")
+            st.plotly_chart(fig_waterfall, use_container_width=True)
+            
+            # Comparison to silicon
+            comparison = compare_to_silicon(cost_data['cost_per_watt'])
+            st.markdown(f"**vs Silicon:** {comparison['description']}")
+            
+        except Exception as e:
+            st.error(f"Cost analysis failed: {e}")
+
+
+def render_scale_up_risk(theme, colorblind):
+    """Scale-Up Risk Assessment."""
+    st.header("⚠️ Scale-Up Risk Assessment")
+    st.markdown("**Toxicity, supply chain, TRL, regulatory compliance**")
+    
+    formula = st.text_input("Composition", "MAPbI3", key="risk_formula")
+    
+    if st.button("⚠️ Assess Risks", type="primary", key="risk_assess"):
+        try:
+            analyzer = TechnoEconomicAnalyzer()
+            
+            tox = analyzer.calculate_toxicity_score(formula)
+            supply = analyzer.calculate_supply_risk(formula)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Toxicity Score", f"{tox['toxicity_score']:.2f}")
+                st.caption(tox['toxicity_level'])
+            with col2:
+                st.metric("Supply Risk", f"{supply['overall_risk_score']:.2f}")
+                st.caption(supply['risk_level'])
+            with col3:
+                st.metric("Pb-Free", "✅ Yes" if tox['pb_free'] else "❌ No")
+            
+            # Risk radar
+            fig_radar = analyzer.plot_scale_up_risk_radar(formula, has_experimental_data=False)
+            fig_radar.update_layout(template="plotly_white")
+            st.plotly_chart(fig_radar, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Risk assessment failed: {e}")
+
+
+def render_publication_export(theme, colorblind):
+    """Publication Export - LaTeX tables, figures, methods."""
+    st.header("📄 Publication Export")
+    st.markdown("**LaTeX tables, 300 DPI figures, methods text, BibTeX**")
+    
+    exporter = PublicationExporter()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        export_latex = st.checkbox("LaTeX Tables", True, key="pub_latex")
+        export_csv = st.checkbox("CSV Tables", True, key="pub_csv")
+    with col2:
+        export_figs = st.checkbox("High-DPI Figures", True, key="pub_figs")
+        export_methods = st.checkbox("Methods Section", True, key="pub_methods")
+    
+    if st.button("📤 Generate Export Package", type="primary", key="pub_export"):
+        with st.spinner("Generating publication package..."):
+            try:
+                # Generate methods section
+                if export_methods:
+                    methods_text = exporter.generate_methods_section(
+                        used_databases=['Materials Project', 'AFLOW'],
+                        used_ml_models=['XGBoost'],
+                        used_bo=True,
+                        used_mo=True,
+                        n_experiments=10
+                    )
+                    
+                    st.markdown("### 📝 Methods Section Preview")
+                    st.code(methods_text, language='markdown')
+                
+                # Generate BibTeX
+                exporter.generate_bibtex_file(used_tools=['xgboost', 'sklearn'])
+                
+                st.success(f"✅ Export package created in: {exporter.output_dir}")
+                st.info("Files saved to `publication_export/` directory")
+                
+            except Exception as e:
+                st.error(f"Export failed: {e}")
+
+
+def render_campaign_dashboard(theme, colorblind):
+    """Campaign Dashboard - complete overview."""
+    st.header("📊 Campaign Dashboard")
+    st.markdown("**Complete overview of your discovery journey**")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        n_materials = len(st.session_state.get('combined_data', []))
+        st.metric("Materials Screened", n_materials)
+    with col2:
+        n_user = len(st.session_state.get('user_data', []))
+        st.metric("Your Experiments", n_user)
+    with col3:
+        model_status = "✅" if st.session_state.get('model_trained', False) else "❌"
+        st.metric("ML Model", model_status)
+    with col4:
+        bo_status = "✅" if 'bo_results' in st.session_state else "❌"
+        st.metric("BO Active", bo_status)
+    
+    # Campaign timeline visualization
+    if n_materials > 0:
+        st.markdown("### 📈 Feature Usage")
+        
+        features = ['Database', 'Upload', 'ML Model', 'BO', 'MO', 'Inverse']
+        usage = [
+            100 if n_materials > 0 else 0,
+            100 if n_user > 0 else 0,
+            100 if st.session_state.get('model_trained') else 0,
+            100 if 'bo_results' in st.session_state else 0,
+            50,  # Placeholder
+            30   # Placeholder
+        ]
+        
+        fig = go.Figure(go.Bar(
+            x=usage, y=features, orientation='h',
+            marker_color=['#00d4aa' if u > 50 else '#ffd93d' for u in usage]
+        ))
+        fig.update_layout(template="plotly_white", height=350, title="Feature Completion (%)")
+        st.plotly_chart(fig, use_container_width=True)
+
+
+# Additional placeholder functions for V7-V10 tabs
 def render_placeholder(tab_name: str, version: str):
-    """Placeholder for tabs implemented in previous versions."""
+    """Placeholder for tabs not yet fully implemented."""
     st.header(tab_name)
     st.info(f"""
-    This feature is fully implemented in **{version}**.
-
-    Run the corresponding version for full functionality:
-    ```bash
-    streamlit run app_{version.lower()}.py
-    ```
-
-    In the unified V11 platform, this tab connects to the same underlying
-    utility modules. Full integration is available in the deployed version.
+    This feature is documented in **{version}**.
+    
+    Core functionality available via utility modules.
+    See `app_{version.lower()}.py` for reference implementation.
     """)
-
-    # Show which module powers this tab
+    
+    # Show module status
     module_map = {
-        "Database Explorer": ("db_clients", "V4"),
-        "User Data Upload": ("data_parser", "V4"),
-        "ML Surrogate Model": ("ml_models", "V5"),
-        "Bayesian Optimization": ("bayesian_opt", "V5"),
-        "Multi-Objective Pareto": ("multi_objective", "V5"),
-        "Inverse Design": ("inverse_design", "V6"),
-        "Techno-Economics": ("techno_economics", "V6"),
-        "Digital Twin": ("digital_twin", "V7"),
-        "Federated Learning": ("federated", "V9"),
-        "Natural Language Query": ("nl_query", "V10"),
+        "Digital Twin": "digital_twin",
+        "Autonomous Scheduler": "auto_scheduler",
+        "Transfer Learning": "transfer_learning",
+        "What-If Scenarios": "scenario_engine",
+        "Model Zoo": "model_zoo",
+        "API Mode": "api_generator",
+        "Benchmarks": "benchmarks",
+        "Educational Mode": "education",
+        "Federated Learning": "federated",
+        "Privacy-Preserving": "federated",
+        "Natural Language Query": "nl_query",
+        "Research Report": "report_generator",
+        "Synthesis Protocol": "protocol_generator",
+        "Knowledge Graph": "knowledge_graph",
+        "Decision Matrix": "decision_matrix",
     }
-
+    
     clean_name = tab_name.split(" ", 1)[-1] if " " in tab_name else tab_name
     if clean_name in module_map:
-        mod, ver = module_map[clean_name]
+        mod = module_map[clean_name]
         try:
             __import__(mod)
             st.success(f"✅ Module `{mod}` loaded successfully")
@@ -694,16 +1249,35 @@ def main():
     elif selected == "📜 About & Credits":
         render_about_credits(theme)
 
-    # V4-V10 tabs (placeholder routing)
+    # V4-V6 tabs (fully implemented)
+    elif selected == "📂 Database Explorer":
+        render_database_explorer(theme, colorblind)
+    elif selected == "📤 User Data Upload":
+        render_user_data_upload(theme, colorblind)
+    elif selected == "🧠 ML Surrogate Model":
+        render_ml_surrogate(theme, colorblind)
+    elif selected == "🎯 Bayesian Optimization":
+        render_bayesian_optimization(theme, colorblind)
+    elif selected == "🏆 Multi-Objective Pareto":
+        render_multi_objective(theme, colorblind)
+    elif selected == "📋 Experiment Planner":
+        render_experiment_planner(theme, colorblind)
+    elif selected == "💾 Session Management":
+        render_session_management(theme, colorblind)
+    elif selected == "🧬 Inverse Design":
+        render_inverse_design(theme, colorblind)
+    elif selected == "💰 Techno-Economics":
+        render_techno_economics(theme, colorblind)
+    elif selected == "⚠️ Scale-Up Risk":
+        render_scale_up_risk(theme, colorblind)
+    elif selected == "📄 Publication Export":
+        render_publication_export(theme, colorblind)
+    elif selected == "📊 Campaign Dashboard":
+        render_campaign_dashboard(theme, colorblind)
+    
+    # V7-V10 tabs (placeholder with module check)
     else:
         version_map = {
-            "📂 Database Explorer": "V4", "📤 User Data Upload": "V4",
-            "🧠 ML Surrogate Model": "V5", "🎯 Bayesian Optimization": "V5",
-            "🏆 Multi-Objective Pareto": "V5", "📋 Experiment Planner": "V5",
-            "💾 Session Management": "V5",
-            "🧬 Inverse Design": "V6", "💰 Techno-Economics": "V6",
-            "⚠️ Scale-Up Risk": "V6", "📄 Publication Export": "V6",
-            "📊 Campaign Dashboard": "V6",
             "🏭 Digital Twin": "V7", "🤖 Autonomous Scheduler": "V7",
             "🔄 Transfer Learning": "V7", "🌍 What-If Scenarios": "V7",
             "👥 Collaborative Discovery": "V7",
